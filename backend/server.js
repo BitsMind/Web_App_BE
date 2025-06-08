@@ -9,6 +9,7 @@ import helmet from "helmet";
 import compression from "compression";
 
 // Route imports
+import authRoute from "../appModule/Auth/routes/auth.routes.js"
 
 import { testCollectionConnection, testProductConnection } from "./lib/cloudinary/cloudinary.js";
 
@@ -28,8 +29,13 @@ const allowedOrigin = NODE_ENV === "development" ? "http://localhost:3000" : nul
 
 // Security middleware
 app.use(helmet()); // Helps secure Express apps with various HTTP headers (X-Content-Type-Options(MIME type sniffing), X-Frame-Options(clickjacking), Content-Security-Policy)
-app.use(mongoSanitize()); // Prevents MongoDB Operator Injection ( Remove malicious characters ($, .) from inputs in MongoDB.)
-
+app.use(mongoSanitize({ 
+    replaceWith: '_',
+    onSanitize: ({ req, key }) => {
+      // Patch here if necessary
+      console.log(`Sanitized key: ${key} in request`);
+    }
+  })); // Prevents MongoDB Operator Injection
 // Rate limiting to prevent brute force attacks or DDoS
 const limiter = rateLimit({
   windowMs: process.env.RATE_LIMIT_WINDOW || 15 * 60 * 1000, // Default to 15 minutes if not set
@@ -61,7 +67,7 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
-
+app.use("/api/auth/", authRoute);
 
 // 404 handler
 app.use((req, res, next) => {
@@ -91,8 +97,6 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
   try {
       // Connect to MongoDB & Cloudinary first 
-    //   await testCollectionConnection();
-    //   await testProductConnection();
       await connectMongoDB();
       
       // Start the server after successful DB connection
