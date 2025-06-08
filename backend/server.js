@@ -29,13 +29,7 @@ const allowedOrigin = NODE_ENV === "development" ? "http://localhost:3000" : nul
 
 // Security middleware
 app.use(helmet()); // Helps secure Express apps with various HTTP headers (X-Content-Type-Options(MIME type sniffing), X-Frame-Options(clickjacking), Content-Security-Policy)
-app.use(mongoSanitize({ 
-    replaceWith: '_',
-    onSanitize: ({ req, key }) => {
-      // Patch here if necessary
-      console.log(`Sanitized key: ${key} in request`);
-    }
-  })); // Prevents MongoDB Operator Injection
+app.use(mongoSanitize()); // Prevents MongoDB Operator Injection
 // Rate limiting to prevent brute force attacks or DDoS
 const limiter = rateLimit({
   windowMs: process.env.RATE_LIMIT_WINDOW || 15 * 60 * 1000, // Default to 15 minutes if not set
