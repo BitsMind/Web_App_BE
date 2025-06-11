@@ -1,7 +1,8 @@
 import { 
     loginService, 
     logoutService, 
-    signupService
+    signupService,
+    getMeService
 } from "../service/auth.service.js";
 import dotenv from "dotenv";
 dotenv.config();
@@ -43,6 +44,19 @@ export const logout = async (req, res) => {
  
     } catch (error) {
         console.error("Error in logout controller:", error.message);
+        if (error.status) {
+            res.status(error.status).json({ error: error.message });
+        } else {
+            res.status(500).json({ error: "Internal Server Error!" });
+        }
+    }
+};
+
+export const getMe = async (req, res) => {
+    try {
+        res.status(200).json(await getMeService(req.user._id));
+    } catch (error) {
+        console.error("Error in getMe controller:", error.message);
         if (error.status) {
             res.status(error.status).json({ error: error.message });
         } else {

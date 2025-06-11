@@ -10,6 +10,7 @@ import  jwt  from "jsonwebtoken";
 import { validateEmail } from "../../utils/Validation/validateEmail.js";
 import { validatePassword } from "../../utils/Validation/validatePassword.js";
 import UserActivity from "../../User/models/UserActivities.js";
+import mongoose from "mongoose";
 
 dotenv.config();
 
@@ -134,6 +135,26 @@ export const logoutService = async(refreshToken, res) => {
         return logoutDTO("Logout successful!");
     } catch (error) {
         console.error("Error in logoutService: ", error.message);
+        throw error;                
+    }
+}
+
+/**
+ * Get current user profile
+ * @param {string} userId - User ID
+ * @returns {object} User data with account information
+ */
+export const getMeService = async(userId, res) => {
+    try {
+        if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {throw { status: 401, message: "Unauthorized access" }}
+        const user = await User.findById(userId).select("-password").populate("accountId", "-password -resetPasswordToken -resetPasswordExpireAt -verificationToken").lean();
+        if (!user) {throw { status: 404, message: "User not found!" }}
+        if (!user.accountId) {throw { status: 404, message: "Account not found" }}
+
+        await logUserActivity(userId, 'ME_ENDPOINT_ACCESSED');
+        return {user: userDTO(user), account: accountDTO(user.accountId)}
+    } catch (error) {
+        console.error("Error in getMeService:", error.message);
         throw error;                
     }
 }

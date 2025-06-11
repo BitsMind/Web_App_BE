@@ -13,27 +13,16 @@ const userSchema = new mongoose.Schema({
         unique: true,
       },
 
-    cartItems: [
+      audioFiles: [
         {
-            quantity: {
-                type: Number,
-                default: 1,
-            },
-            totalPrice: {
-                type: Number,
-                default: 1000,
-            },
-            size: {
-                type: String,
-                default: "S"
-            },
-            product: {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: "Product",
-            }
-        }
-    ],
-
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "AudioFile",
+        },
+      ],
+      totalProcessedFiles: {
+        type: Number,
+        default: 0,
+      },
     totalPaid: {
         type: Number,
         default: 0,
