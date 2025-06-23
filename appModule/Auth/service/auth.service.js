@@ -11,6 +11,7 @@ import { validateEmail } from "../../utils/Validation/validateEmail.js";
 import { validatePassword } from "../../utils/Validation/validatePassword.js";
 import UserActivity from "../../User/models/UserActivities.js";
 import mongoose from "mongoose";
+import AudioFile from "../../AudioFile/model/audioFile.model.js";
 
 dotenv.config();
 
@@ -147,7 +148,7 @@ export const logoutService = async(refreshToken, res) => {
 export const getMeService = async(userId, res) => {
     try {
         if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {throw { status: 401, message: "Unauthorized access" }}
-        const user = await User.findById(userId).select("-password").populate("accountId", "-password -resetPasswordToken -resetPasswordExpireAt -verificationToken").lean();
+        const user = await User.findById(userId).select("-password -email").populate("accountId", "-password -resetPasswordToken -resetPasswordExpireAt -verificationToken").lean();
         if (!user) {throw { status: 404, message: "User not found!" }}
         if (!user.accountId) {throw { status: 404, message: "Account not found" }}
 
@@ -158,6 +159,90 @@ export const getMeService = async(userId, res) => {
         throw error;                
     }
 }
+
+/**
+ * Get user profile with audio watermarked information
+ * @param {number} page - Page number
+ * @param {number} limit - Items per page
+ * @param {string} userId - User ID
+ * @returns {object} User profile data
+ */
+export const getUserProfileService = async (userId, page, limit, all = false) => {
+    try {
+        const pageNumber = parseInt(page) || 1;
+        const limitNumber = parseInt(limit) || 8;
+
+        if (pageNumber < 1 || limitNumber < 1) {
+            throw { status: 400, message: "Invalid pagination parameters" };
+        }
+        if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+            throw { status: 400, message: "Valid user ID is required" };
+        }
+
+        const skip = (pageNumber - 1) * limitNumber;
+
+        // Get total count for pagination
+        const totalAudioFiles = await AudioFile.countDocuments({ uploadedBy: userId });
+
+        if (totalAudioFiles === 0) {
+            return {
+                audioFiles: [],
+                totalPages: 0,
+                currentPage: pageNumber,
+                totalAudioFiles: 0,
+                userStats: null
+            };
+        }
+
+        // Get user information with stats
+        const user = await User.findById(userId)
+            .select("name email totalProcessedFiles totalPaid")
+            .lean();
+
+        if (!user) {
+            throw { status: 404, message: "User not found" };
+        }
+
+        let audioFileQuery = AudioFile.find({ uploadedBy: userId }).sort({ createdAt: -1 });
+
+        if (!all) {
+            audioFileQuery = audioFileQuery.skip(skip).limit(limitNumber);
+        }
+
+        const audioFiles = await audioFileQuery.lean();
+
+        // Format audio files with proper null checks
+        const formattedAudioFiles = audioFiles.map((file) => ({
+            id: file?._id,
+            fileName: file?.fileName,
+            filePath: file?.filePath,
+            fileSize: file?.fileSize || 0,
+            format: file?.format,
+            isWatermarked: file?.isWatermarked || false,
+            watermarkMessage: file?.watermarkMessage || null,
+            processingStatus: file?.processingStatus || "pending",
+            processedAt: file?.processedAt,
+            createdAt: file?.createdAt,
+            updatedAt: file?.updatedAt
+        }));
+
+        return {
+            audioFiles: formattedAudioFiles,
+            totalPages: all ? 1 : Math.ceil(totalAudioFiles / limitNumber),
+            currentPage: all ? 1 : pageNumber,
+            totalAudioFiles,
+            userStats: {
+                name: user.name,
+                email: user.email,
+                totalProcessedFiles: user.totalProcessedFiles || 0,
+                totalPaid: user.totalPaid || 0
+            }
+        };
+    } catch (error) {
+        console.error("Error in getUserProfileService:", error.message);
+        throw error;
+    }
+};
 
 // /**
 //  * Log user activity to the database

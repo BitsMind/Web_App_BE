@@ -2,7 +2,8 @@ import {
     loginService, 
     logoutService, 
     signupService,
-    getMeService
+    getMeService,
+    getUserProfileService
 } from "../service/auth.service.js";
 import dotenv from "dotenv";
 dotenv.config();
@@ -57,6 +58,22 @@ export const getMe = async (req, res) => {
         res.status(200).json(await getMeService(req.user._id));
     } catch (error) {
         console.error("Error in getMe controller:", error.message);
+        if (error.status) {
+            res.status(error.status).json({ error: error.message });
+        } else {
+            res.status(500).json({ error: "Internal Server Error!" });
+        }
+    }
+};
+
+export const getUserProfile = async (req, res) => {
+    try {
+        const all = req.query.all === 'true'; 
+        const page = req.query.page || 1;
+        const limit = req.query.limit || 5;
+        res.status(200).json(await getUserProfileService(req.user._id, page, limit, all));
+    } catch (error) {
+        console.error("Error in getUserProfile controller:", error.message);
         if (error.status) {
             res.status(error.status).json({ error: error.message });
         } else {
