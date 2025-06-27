@@ -8,15 +8,10 @@ dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 // Check for required environment variables
 const requiredEnvVars = [
-  // Product Cloudinary
-  "CLOUDINARY_PRODUCTS_CLOUD_NAME",
-  "CLOUDINARY_PRODUCTS_API_KEY",
-  "CLOUDINARY_PRODUCTS_API_SECRET",
-
-  // Collection Cloudinary
-  "CLOUDINARY_COLLECTIONS_CLOUD_NAME",
-  "CLOUDINARY_COLLECTIONS_API_KEY",
-  "CLOUDINARY_COLLECTIONS_API_SECRET"
+  // Audio Cloudinary
+  "AUDIO_CLOUD_NAME",
+  "AUDIO_API_KEY",
+  "AUDIO_API_SECRET",
 ];
 
 const missingEnvVars = requiredEnvVars.filter(
@@ -29,12 +24,12 @@ if (missingEnvVars.length > 0) {
   );
 }
 
-// Configure Products Cloudinary Instance
-export const productCloudinary = () => {
+// Configure Audio Cloudinary Instance
+export const audioCloudinary = () => {
   cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_PRODUCTS_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_PRODUCTS_API_KEY,
-    api_secret: process.env.CLOUDINARY_PRODUCTS_API_SECRET,
+    cloud_name: process.env.AUDIO_CLOUD_NAME,
+    api_key: process.env.AUDIO_API_KEY,
+    api_secret: process.env.AUDIO_API_SECRET,
     secure: true
   });
   return cloudinary;
@@ -42,63 +37,29 @@ export const productCloudinary = () => {
 }
 
 
-// Configure Collections Cloudinary Instance
-export const cloudinaryCollection = () => {
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_COLLECTIONS_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_COLLECTIONS_API_KEY,
-    api_secret: process.env.CLOUDINARY_COLLECTIONS_API_SECRET,
-    secure: true // Ensure HTTPS is always used
-  });
-  return cloudinary;
-}
-
-// Test connection for Collections Cloudinary
-export const testCollectionConnection = async () => {
+// Test connection for Audio Cloudinary
+export const testAudioConnection = async () => {
   try {
-    const cloudinary = cloudinaryCollection();
+    const cloudinary = audioCloudinary()
     const result = await cloudinary.api.ping();
-    console.log("Collection Cloudinary connection successful");
+    console.log("Audio Cloudinary connection successful");
     return { 
       success: true, 
-      message: "Collection Cloudinary connection successful", 
+      message: "Audio Cloudinary connection successful", 
       result,
-      type: "collections"
+      type: "audio"
     };
   } catch (error) {
-    console.error("Collection Cloudinary connection failed:", error.message);
+    console.error("Audio Cloudinary connection failed:", error.message);
     return { 
       success: false, 
-      message: "Collection Cloudinary connection failed", 
+      message: "Audio Cloudinary connection failed", 
       error,
-      type: "collections"
-    };
-  }
-}
-
-// Test connection for Collections Cloudinary
-export const testProductConnection = async () => {
-  try {
-    const cloudinary = productCloudinary()
-    const result = await cloudinary.api.ping();
-    console.log("Product Cloudinary connection successful");
-    return { 
-      success: true, 
-      message: "Product Cloudinary connection successful", 
-      result,
-      type: "products"
-    };
-  } catch (error) {
-    console.error("Product Cloudinary connection failed:", error.message);
-    return { 
-      success: false, 
-      message: "Product Cloudinary connection failed", 
-      error,
-      type: "products"
+      type: "audio"
     };
   }
 }
 
 
 
-export default { productCloudinary, cloudinaryCollection };
+export default testAudioConnection;

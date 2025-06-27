@@ -10,8 +10,8 @@ import compression from "compression";
 
 // Route imports
 import authRoute from "../appModule/Auth/routes/auth.routes.js"
-
-import { testCollectionConnection, testProductConnection } from "./lib/cloudinary/cloudinary.js";
+import audioRoute from "../appModule/AudioFile/routes/audio.routes.js"
+import testAudioConnection from "./lib/cloudinary/cloudinary.js";
 
 // Load environment variables
 dotenv.config();
@@ -62,6 +62,7 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use("/api/auth/", authRoute);
+app.use("/api/audio/", audioRoute);
 
 // 404 handler
 app.use((req, res, next) => {
@@ -90,7 +91,8 @@ app.use((err, req, res, next) => {
 
 const startServer = async () => {
   try {
-      // Connect to MongoDB & Cloudinary first 
+      // Connect to MongoDB & Cloudinary first
+      await testAudioConnection() 
       await connectMongoDB();
       
       // Start the server after successful DB connection
