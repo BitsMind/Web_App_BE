@@ -1,19 +1,19 @@
+import axios from "axios";
 import { audioCloudinary } from "../../../backend/lib/cloudinary/cloudinary.js";
 import User from "../../User/models/user.models.js";
-import { audioFileDTO, audioFileUserDTO } from "../dto/audio.dto.js";
+import { audioFileDTO, audioFileUserDTO, watermarkDetectionDTO } from "../dto/audio.dto.js";
 import AudioFile from "../model/audioFile.model.js";
 import DownloadLog from "../model/DownloadLog.model.js";
-// import {
-//     updateCachedFeaturedAudioFiles,
-//     updateCachedRecommendedAudioFiles,
-//     updateFeaturedAudioFileCache
-// } from "../../../backend/lib/redis/redis.config.js";
 import dotenv from "dotenv";
 import path from "path";
 
 
 // Load environment variables
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+
+// Configuration
+const PYTHON_API_BASE_URL = process.env.PYTHON_API_URL || 'http://127.0.0.1:8000';
+const PYTHON_API_TIMEOUT = 60000; // 60 seconds
 
 
 const cloudinary = audioCloudinary();
@@ -100,6 +100,8 @@ export const getAllAudioFileUserService = async (userId = null) => {
             filter.uploadedBy = userId;
         }
 
+
+
         const audioFiles = await AudioFile.find(filter)
             .populate('uploadedBy', 'name email')
             .select('-__v')
@@ -114,6 +116,8 @@ export const getAllAudioFileUserService = async (userId = null) => {
                 message: 'No audio files found'
             };
         }
+
+
 
         return {
             audioFiles: audioFiles.map((audioFile) => audioFileUserDTO(audioFile)),
@@ -131,6 +135,7 @@ export const getAllAudioFileUserService = async (userId = null) => {
  * @param {string} userId - User ID who uploaded the file
  * @returns {Object} Created audio file
  */
+
 export const createAudioFileService = async (newAudioFile, userId) => {
     try {
         const { fileName, fileSize, format, watermarkMessage, fileBuffer, filePath, fileBase64 } = newAudioFile;
@@ -141,42 +146,36 @@ export const createAudioFileService = async (newAudioFile, userId) => {
         if (!format) throw { status: 400, message: "File format is required!" };
         if (!userId) throw { status: 400, message: "User ID is required!" };
 
-        // Validate that at least one file source is provided
         if (!fileBuffer && !filePath && !fileBase64) {
             throw { status: 400, message: "Audio file data is required! Provide fileBuffer, filePath, or fileBase64" };
         }
 
-        // Validate file format
         const allowedFormats = ['mp3', 'wav', 'flac', 'mp4', 'm4a'];
         if (!allowedFormats.includes(format.toLowerCase())) {
             throw { status: 400, message: `Unsupported format. Allowed formats: ${allowedFormats.join(', ')}` };
         }
 
-        // Check if user exists
         const user = await User.findById(userId);
         if (!user) {
             throw { status: 404, message: "User not found!" };
         }
 
-        // Determine the file data source to upload
         let audioDataToUpload;
         if (fileBuffer) {
-            // Convert buffer to base64 for Cloudinary
             audioDataToUpload = `data:audio/${format};base64,${fileBuffer.toString('base64')}`;
         } else if (fileBase64) {
-            // Use provided base64 data
             audioDataToUpload = fileBase64.startsWith('data:') ? fileBase64 : `data:audio/${format};base64,${fileBase64}`;
         } else if (filePath) {
-            // Use file path directly
             audioDataToUpload = filePath;
         }
 
-        // Upload audio file to Cloudinary
+        // === 1. Upload to Cloudinary
         const audioUrl = await uploadAudioToCloudinary(audioDataToUpload, format, {
             resource_type: "video",
             folder: "audio_files"
         });
 
+        // === 2. Create DB record (with pending status)
         const audioFile = await AudioFile.create({
             fileName,
             filePath: audioUrl,
@@ -187,14 +186,128 @@ export const createAudioFileService = async (newAudioFile, userId) => {
             processingStatus: "pending"
         });
 
-        // Populate the uploadedBy field before returning
-        await audioFile.populate('uploadedBy', 'name email');
+        // === 3. Call Python API to watermark
+        try {
+            const watermarkedResponse = await axios.post(`${PYTHON_API_BASE_URL}/add-watermark-url`, {
+                audioUrl: audioUrl,
+                watermarkMessage: watermarkMessage || ''
+            });
 
+            const { base64_audio, decoded_message, status } = watermarkedResponse.data;
+            if (status !== "success") {
+                throw { status: 500, message: "Watermarking failed on Python BE" };
+            }
+
+            const watermarkedUrl = await uploadAudioToCloudinary(
+                `data:audio/${format};base64,${base64_audio}`,
+                format,
+                {
+                resource_type: "video",
+                folder: "audio_files"
+                }
+            )
+
+            // Update DB record with watermark results
+            audioFile.filePath = watermarkedUrl; // or save in separate field
+            audioFile.watermarkMessage = decoded_message;
+            audioFile.processingStatus = "completed";
+            audioFile.isWatermarked = "true";
+            await audioFile.save();
+        } catch (error) {
+            console.error("❌ Error calling Python API:", error.message);
+            audioFile.processingStatus = "failed";
+            await audioFile.save();
+        }
+
+        await audioFile.populate('uploadedBy', 'name email');
         return audioFileDTO(audioFile);
     } catch (error) {
         console.error("Error in createAudioFileService:", error.message);
         throw error;
     }
+};
+
+export const detectWatermarkService = async (audioFile) => {
+  let uploadedAudioUrl;
+
+  try {
+    const format = audioFile.format || "mp3";
+
+    // === 1. Upload to Cloudinary ===
+    uploadedAudioUrl = await uploadAudioToCloudinary(audioFile, format, {
+      resource_type: "video",
+      folder: "audio_detect"
+    });
+
+
+    // === 2. Update status to "detecting"
+    // audioFile.filePath = uploadedAudioUrl
+    // audioFile.processingStatus = "detecting";
+    // await audioFile.save();
+
+
+    // console.log(`🔍 Starting watermark detection for: ${audioFile.fileName}`);
+
+    // === 3. Call Python API
+    const response = await axios.post(
+      `${PYTHON_API_BASE_URL}/detect-watermark`,
+      { audioUrl: uploadedAudioUrl },
+      {
+        timeout: PYTHON_API_TIMEOUT,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+
+    console.log("🐍 Python API Response:", response.data);
+
+    const { status, watermark_detected, confidence, decoded_message } = response.data;
+
+    if (status !== "done") {
+      console.error("Python detection failed response:", response.data);
+      throw { status: 500, message: "Watermark detection failed on Python backend" };
+    }
+
+    // === 4. Save results to DB
+    // audioFile.watermarkDetected = watermark_detected;
+    // audioFile.confidence = confidence || 0;
+    // audioFile.detectedMessage = decoded_message || null;
+    // audioFile.detectionTimestamp = new Date();
+    // audioFile.processingStatus = "completed";
+    // await audioFile.save();
+    // await audioFile.populate('uploadedBy', 'name email');
+
+    // console.log(`✅ Detection completed for: ${audioFile.fileName}`);
+    console.log(`📊 Detected=${watermark_detected}, Confidence=${confidence}`);
+
+    return watermarkDetectionDTO(audioFile);
+
+  } catch (error) {
+    // === 5. Fallback update to mark failure
+    if (audioFile?._id) {
+      try {
+        await AudioFile.findByIdAndUpdate(audioFile._id, {
+          processingStatus: "detection_failed",
+          detectionTimestamp: new Date()
+        });
+      } catch (updateError) {
+        console.error("❌ Failed to mark detection_failed:", updateError);
+      }
+    }
+
+    // === 6. Error Classification
+    if (error.response?.status === 404) {
+      throw { status: 404, message: "Audio file not accessible or Python API missing" };
+    } else if (error.response?.status >= 500) {
+      throw { status: 500, message: "Python API server error during detection" };
+    } else if (error.code === 'ECONNREFUSED') {
+      throw { status: 503, message: "Python server is not running" };
+    } else if (error.code === 'ETIMEDOUT') {
+      throw { status: 408, message: "Detection request timed out" };
+    }
+
+    console.error("❌ Error in detectWatermarkService:", error.message);
+    throw error;
+  }
 };
 
 /**
@@ -361,13 +474,13 @@ export const updateProcessingStatusService = async (audioFileId, status, waterma
             throw { status: 400, message: "Audio file ID is required!" };
         }
 
-        if (!['pending', 'processing', 'done', 'failed'].includes(status)) {
+        if (!['pending', 'processing', 'completed', 'failed'].includes(status)) {
             throw { status: 400, message: "Invalid processing status!" };
         }
 
         const updates = { processingStatus: status };
         
-        if (status === 'done') {
+        if (status === 'completed') {
             updates.processedAt = new Date();
             if (watermarkMessage) {
                 updates.isWatermarked = true;
@@ -440,33 +553,6 @@ export const generateDownloadUrlService = async (audioFileId, userId) => {
         throw error;
     }
 };
-
-/**
- * Helper function to update caches
- * @param {Object} audioFile - AudioFile object
- */
-// const updateAudioFileCaches = async (audioFile) => {
-//     try {
-//         // Update featured audio files cache if needed
-//         // This would depend on your business logic for featured audio files
-        
-//         // Update recommended audio files cache with recent files
-//         const recommendedAudioFiles = await AudioFile.find({
-//             processingStatus: "done"
-//         })
-//             .limit(5)
-//             .sort({ createdAt: -1 })
-//             .populate('uploadedBy', 'name email')
-//             .select("_id fileName format fileSize isWatermarked uploadedBy");
-
-//         await updateCachedRecommendedAudioFiles(
-//             recommendedAudioFiles.map((audioFile) => audioFileDTO(audioFile))
-//         );
-//     } catch (error) {
-//         console.error("Error updating audio file caches:", error.message);
-//     }
-// };
-
 // Helper Functions
 
 /**

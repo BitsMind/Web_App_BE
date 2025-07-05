@@ -1,6 +1,7 @@
 import { 
     createAudioFileService, 
     deleteAudioFileService, 
+    detectWatermarkService, 
     editAudioFileService, 
     generateDownloadUrlService, 
     getAllAudioFileService, 
@@ -200,6 +201,19 @@ export const downloadAudioFile = async (req, res) => {
         res.status(200).json(result);
     } catch (error) {
         console.error("Error in downloadAudioFile controller:", error.message);
+        res.status(error.status || 500).json({ error: error.message || "Failed to generate download URL" });
+    }
+};
+
+export const detectWatermark = async (req, res) => {
+    try {
+        const {audioFile } = req.body;
+        const userId = req.user?.id || null;
+        const result = await detectWatermarkService(audioFile, userId);
+
+        res.status(200).json(result);
+    } catch (error) {
+        console.error("Error in detectWatermark controller:", error.message);
         res.status(error.status || 500).json({ error: error.message || "Failed to generate download URL" });
     }
 };
