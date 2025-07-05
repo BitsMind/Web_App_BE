@@ -145,3 +145,20 @@ export const audioFileUserEnhancedDTO = (audioFile) => {
         hasFailed: audioFile.processingStatus === 'failed'
     };
 };
+
+// DTO function for consistent response format
+export const watermarkDetectionDTO = (detection) => ({
+    id: detection._id,
+    fileName: detection.fileName,
+    filePath: detection.filePath,
+    fileSize: detection.fileSize,
+    format: detection.format,
+    watermarkDetected: detection.watermarkDetected,
+    confidence: detection.confidence,
+    detectedMessage: detection.detectedMessage,
+    detectionTimestamp: detection.detectionTimestamp,
+    processingStatus: detection.processingStatus,
+    uploadedBy: detection.uploadedBy,
+    createdAt: detection.createdAt,
+    updatedAt: detection.updatedAt
+});

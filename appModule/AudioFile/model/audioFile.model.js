@@ -24,45 +24,9 @@ const audioFileSchema = new mongoose.Schema({
     required: true,
     lowercase: true,
     enum: {
-      values: ['mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg', 'wma'],
+      values: ['mp3', 'wav', 'flac', 'mp4', 'm4a'],
       message: 'Format must be one of: mp3, wav, flac, aac, m4a, ogg, wma'
     },
-  },
-  duration: {
-    type: Number, // Duration in seconds
-    min: 0,
-  },
-  bitrate: {
-    type: Number, // Bitrate in kbps
-    min: 0,
-  },
-  sampleRate: {
-    type: Number, // Sample rate in Hz
-    min: 0,
-  },
-  isWatermarked: {
-    type: Boolean,
-    default: false,
-    index: true, // Index for filtering watermarked files
-  },
-  watermarkMessage: {
-    type: String,
-    default: null,
-    maxlength: [500, "Watermark message cannot exceed 500 characters"],
-    trim: true,
-  },
-  processingStatus: {
-    type: String,
-    enum: {
-      values: ["pending", "processing", "done", "failed"],
-      message: 'Status must be one of: pending, processing, done, failed'
-    },
-    default: "pending",
-    index: true, // Index for querying by status
-  },
-  processedAt: {
-    type: Date,
-    index: true, // Index for sorting by processing time
   },
   uploadedBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -70,24 +34,122 @@ const audioFileSchema = new mongoose.Schema({
     required: true,
     index: true, // Index for user-specific queries
   },
+  processingStatus: {
+    type: String,
+    enum: {
+      values: ["pending", "processing", "detecting", "completed", "failed"],
+      message: 'Status must be one of: pending, processing, completed, failed'
+    },
+    default: "pending",
+    index: true, // Index for querying by status
+  },
+  watermarkMessage: {
+    type: String,
+    default: null,
+    maxlength: [500, "Watermark message cannot exceed 500 characters"],
+    trim: true,
+  },
+
+  // === Watermark Detection Fields ===
+  watermarkDetected: {
+        type: Boolean,
+        default: null // null = not tested, true = detected, false = not detected
+  },
+
+      confidence: {
+        type: Number,
+        default: null,
+        min: 0,
+        max: 1
+    },
+
+
+        detectedMessage: {
+        type: String,
+        default: null,
+        maxlength: 1000
+    },
+
+        detectionTimestamp: {
+        type: Date,
+        default: null
+    },
+    detectionAttempts: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
+    lastDetectionError: {
+        type: String,
+        default: null
+    },
+
+      isWatermarked: {
+    type: Boolean,
+    default: false,
+    index: true, // Index for filtering watermarked files
+  },
+
+    // === Metadata ===
+    metadata: {
+        duration: {
+            type: Number, // in seconds
+            default: null
+        },
+        bitrate: {
+            type: Number,
+            default: null
+        },
+        sampleRate: {
+            type: Number,
+            default: null
+        },
+        channels: {
+            type: Number,
+            default: null
+        }
+    },
+
+    // === Tags and Categories ===
+
+  processedAt: {
+    type: Date,
+    index: true, // Index for sorting by processing time
+  },
+
   tags: [{
     type: String,
     trim: true,
     lowercase: true,
     maxlength: [50, "Tag cannot exceed 50 characters"],
   }],
-  metadata: {
-    title: String,
-    artist: String,
-    album: String,
-    year: Number,
-    genre: String,
-  },
-  downloadCount: {
-    type: Number,
-    default: 0,
-    min: 0,
-  },
+      category: {
+        type: String,
+        enum: ['music', 'speech', 'podcast', 'soundeffect', 'other'],
+        default: 'other'
+    },
+
+    // === Privacy Settings ===
+    isPublic: {
+        type: Boolean,
+        default: false
+    },
+    sharedWith: [{
+        user: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        },
+        permissions: {
+            type: String,
+            enum: ['read', 'write', 'admin'],
+            default: 'read'
+        },
+        sharedAt: {
+            type: Date,
+            default: Date.now
+        }
+    }],
+
   isActive: {
     type: Boolean,
     default: true,
@@ -107,8 +169,11 @@ const audioFileSchema = new mongoose.Schema({
 // Compound indexes for common query patterns
 audioFileSchema.index({ uploadedBy: 1, createdAt: -1 }); // User files by date
 audioFileSchema.index({ processingStatus: 1, createdAt: 1 }); // Processing queue
+audioFileSchema.index({ watermarkDetected: 1 });
 audioFileSchema.index({ isActive: 1, uploadedBy: 1 }); // Active user files
 audioFileSchema.index({ format: 1, isWatermarked: 1 }); // Format and watermark filtering
+audioFileSchema.index({ detectionTimestamp: -1 });
+audioFileSchema.index({ 'uploadedBy': 1, 'watermarkDetected': 1 });
 audioFileSchema.index({ tags: 1 }); // Tag-based searches
 audioFileSchema.index({ fileSize: 1 }); // Size-based queries
 audioFileSchema.index({ duration: 1 }); // Duration-based queries

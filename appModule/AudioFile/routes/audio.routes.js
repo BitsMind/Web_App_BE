@@ -3,6 +3,7 @@ import {
     // getAllAudioFilesUser,
     createAudioFile,
     deleteAudioFile,
+    detectWatermark,
     downloadAudioFile,
     // getAudioFilesByFormat,
     editAudioFile,
@@ -42,5 +43,7 @@ router.put("/edit/:id", protectRoute(ROLE_GROUPS.STAFF), editAudioFile); // Edit
 
 // Delete routes
 router.delete("/delete/:id", protectRoute(ROLE_GROUPS.USER), deleteAudioFile); // Delete audio file
+
+router.post("/detect-watermark", protectRoute(ROLE_GROUPS.USER), detectWatermark);
 
 export default router;
