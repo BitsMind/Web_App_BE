@@ -43,13 +43,6 @@ const audioFileSchema = new mongoose.Schema({
     default: "pending",
     index: true, // Index for querying by status
   },
-  watermarkMessage: {
-    type: String,
-    default: null,
-    maxlength: [20, "Watermark message cannot exceed 500 characters"],
-    trim: true,
-  },
-
   // === Watermark Detection Fields ===
   watermarkDetected: {
         type: Boolean,
