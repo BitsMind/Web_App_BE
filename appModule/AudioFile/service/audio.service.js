@@ -3,6 +3,7 @@ import { audioCloudinary } from "../../../backend/lib/cloudinary/cloudinary.js";
 import User from "../../User/models/user.models.js";
 import { audioFileDTO, audioFileUserDTO, watermarkDetectionDTO } from "../dto/audio.dto.js";
 import AudioFile from "../model/audioFile.model.js";
+import WatermarkedMessage from "../model/WatermarkedMessage.model.js";
 import DownloadLog from "../model/DownloadLog.model.js";
 import dotenv from "dotenv";
 import path from "path";
@@ -137,170 +138,193 @@ export const getAllAudioFileUserService = async (userId = null) => {
  */
 
 export const createAudioFileService = async (newAudioFile, userId) => {
-    try {
-        const { fileName, fileSize, format, watermarkMessage, fileBuffer, filePath, fileBase64 } = newAudioFile;
+  try {
+    const { fileName, fileSize, format, watermarkMessage, fileBuffer, filePath, fileBase64 } = newAudioFile;
 
-        if (watermarkMessage.length > 20) {throw { status: 400, message: "Watermark message cannot exceed 20 characters" };}
-        // Validate required fields
-        if (!fileName) throw { status: 400, message: "File name is required!" };
-        if (!fileSize) throw { status: 400, message: "File size is required!" };
-        if (typeof fileSize !== 'number') throw { status: 400, message: "Valid file size is required!" };
-        if (!format) throw { status: 400, message: "File format is required!" };
-        if (!userId) throw { status: 400, message: "User ID is required!" };
-
-        if (!fileBuffer && !filePath && !fileBase64) {
-            throw { status: 400, message: "Audio file data is required! Provide fileBuffer, filePath, or fileBase64" };
-        }
-
-        const allowedFormats = ['mp3', 'wav', 'flac', 'mp4', 'm4a'];
-        if (!allowedFormats.includes(format.toLowerCase())) {
-            throw { status: 400, message: `Unsupported format. Allowed formats: ${allowedFormats.join(', ')}` };
-        }
-
-        const user = await User.findById(userId);
-        if (!user) {
-            throw { status: 404, message: "User not found!" };
-        }
-
-        let audioDataToUpload;
-        if (fileBuffer) {
-            audioDataToUpload = `data:audio/${format};base64,${fileBuffer.toString('base64')}`;
-        } else if (fileBase64) {
-            audioDataToUpload = fileBase64.startsWith('data:') ? fileBase64 : `data:audio/${format};base64,${fileBase64}`;
-        } else if (filePath) {
-            audioDataToUpload = filePath;
-        }
-
-        // === 1. Upload to Cloudinary
-        const audioUrl = await uploadAudioToCloudinary(audioDataToUpload, format, {
-            resource_type: "video",
-            folder: "audio_files",
-            fetch_format: 'wav'
-        });
-
-        // === 2. Create DB record (with pending status)
-        const audioFile = await AudioFile.create({
-            fileName,
-            filePath: audioUrl,
-            fileSize,
-            format: format.toLowerCase(),
-            watermarkMessage: watermarkMessage || null,
-            uploadedBy: userId,
-            processingStatus: "pending"
-        });
-
-        // === 3. Call Python API to watermark
-        try {
-            let watermarkedResponse;
-            let endpoint;
-            let payload;
-
-            // Choose endpoint based on message presence and length
-            if (!watermarkMessage || watermarkMessage.trim() === '') {
-                // No message - use basic watermarking
-                endpoint = '/add-watermark-url';
-                payload = {
-                    audioUrl: audioUrl,
-                    watermarkMessage: '', // Empty string for random watermark
-                    bitLength: 16
-                };
-                console.log('🔄 Using basic watermarking (no custom message)');
-            } else if (watermarkMessage.length < 2) {
-                // Short message (1-2 characters) - use basic watermarking
-                endpoint = '/add-watermark-url';
-                payload = {
-                    audioUrl: audioUrl,
-                    watermarkMessage: watermarkMessage,
-                    bitLength: 16
-                };
-                console.log(`🔄 Using basic watermarking for short message: "${watermarkMessage}"`);
-            } else {
-                // Long message (3+ characters) - use sequential watermarking
-                endpoint = '/add-watermark-sequential';
-                payload = {
-                    audioUrl: audioUrl,
-                    watermarkMessage: watermarkMessage
-                };
-                console.log(`🔄 Using sequential watermarking for long message: "${watermarkMessage}"`);
-            }
-
-            watermarkedResponse = await axios.post(`${PYTHON_API_BASE_URL}${endpoint}`, payload);
-
-            const responseData = watermarkedResponse.data;
-
-            let base64_audio, decoded_message, status;
-
-            if (endpoint === '/add-watermark-sequential') {
-                // Sequential watermarking response format
-                base64_audio = responseData.base64_audio;
-                decoded_message = responseData.full_detected_message;
-                status = responseData.status;
-            } else {
-                // Basic watermarking response format
-                base64_audio = responseData.base64_audio;
-                decoded_message = responseData.decoded_message;
-                status = responseData.status;
-            }
-
-            if (status !== "success") {
-                throw { status: 500, message: "Watermarking failed on Python BE" };
-            }
-
-            const watermarkedUrl = await uploadAudioToCloudinary(
-                `data:audio/${format};base64,${base64_audio}`,
-                format,
-                {
-                    resource_type: "video",
-                    folder: "audio_files",
-                    fetch_format: 'wav'
-                }
-            );
-
-            console.log(watermarkedUrl)
-
-            console.log(`✅ Watermarking completed. Original: "${watermarkMessage}", Detected: "${decoded_message}"`);
-
-            // Update DB record with watermark results
-            audioFile.filePath = watermarkedUrl; // or save in separate field
-            audioFile.watermarkMessage = decoded_message || 'Random watermark';
-            audioFile.processingStatus = "completed";
-            audioFile.isWatermarked = "true";
-            await audioFile.save();
-        } catch (error) {
-            console.error("❌ Error calling Python API:", error.response?.data || error.message);
-            audioFile.processingStatus = "failed";
-            audioFile.errorMessage = error.response?.data?.detail || error.message;
-            await audioFile.save();
-            throw { status: 500, message: "Watermarking failed: " + (error.response?.data?.detail || error.message) };
-        }
-
-        await audioFile.populate('uploadedBy', 'name email');
-        return audioFileDTO(audioFile);
-    } catch (error) {
-        console.error("Error in createAudioFileService:", error.message);
-        throw error;
+    if (watermarkMessage && watermarkMessage.length > 500) {
+      throw { status: 400, message: "Watermark message cannot exceed 500 characters" };
     }
+
+    if (!fileName) throw { status: 400, message: "File name is required!" };
+    if (!fileSize) throw { status: 400, message: "File size is required!" };
+    if (typeof fileSize !== 'number') throw { status: 400, message: "Valid file size is required!" };
+    if (!format) throw { status: 400, message: "File format is required!" };
+    if (!userId) throw { status: 400, message: "User ID is required!" };
+
+    if (!fileBuffer && !filePath && !fileBase64) {
+      throw {
+        status: 400,
+        message: "Audio file data is required! Provide fileBuffer, filePath, or fileBase64"
+      };
+    }
+
+    const allowedFormats = ['mp3', 'wav', 'flac', 'mp4', 'm4a'];
+    if (!allowedFormats.includes(format.toLowerCase())) {
+      throw {
+        status: 400,
+        message: `Unsupported format. Allowed formats: ${allowedFormats.join(', ')}`
+      };
+    }
+
+    const user = await User.findById(userId);
+    if (!user) throw { status: 404, message: "User not found!" };
+
+    let audioDataToUpload;
+    if (fileBuffer) {
+      audioDataToUpload = `data:audio/${format};base64,${fileBuffer.toString('base64')}`;
+    } else if (fileBase64) {
+      audioDataToUpload = fileBase64.startsWith('data:') ? fileBase64 : `data:audio/${format};base64,${fileBase64}`;
+    } else if (filePath) {
+      audioDataToUpload = filePath;
+    }
+
+    const audioUrl = await uploadAudioToCloudinary(audioDataToUpload, format, {
+      resource_type: "video",
+      folder: "audio_files",
+      fetch_format: 'wav'
+    });
+
+    const audioFile = await AudioFile.create({
+      fileName,
+      filePath: audioUrl,
+      fileSize,
+      format: format.toLowerCase(),
+      watermarkMessage: watermarkMessage || null,
+      uploadedBy: userId,
+      processingStatus: "pending"
+    });
+
+    try {
+      let watermarkedResponse;
+      let endpoint;
+      let payload;
+
+      // 🆕 Generate 16-byte binary watermark ID
+      const watermarkBinaryId = await generate16BitBinaryString();
+      const generatedWatermarkMessage = watermarkBinaryId.toString('hex');
+
+      console.log(watermarkBinaryId)
+
+      if (!watermarkMessage || watermarkMessage.trim() === '') {
+        endpoint = '/add-watermark-url';
+        payload = {
+          audioUrl: audioUrl,
+          watermarkMessage: watermarkBinaryId,
+        };
+        console.log(`🔄 Using generated binary watermark ID: ${watermarkBinaryId}`);
+      } else if (watermarkMessage.length < 2) {
+        endpoint = '/add-watermark-url';
+        payload = {
+          audioUrl: audioUrl,
+          watermarkMessage: watermarkMessage,
+        };
+        console.log(`🔄 Using basic watermarking for short message: "${watermarkBinaryId}"`);
+      } else {
+        endpoint = '/add-watermark-url';
+        payload = {
+          audioUrl: audioUrl,
+          watermarkMessage: watermarkBinaryId
+        };
+        console.log(`🔄 Using sequential watermarking for long message: "${watermarkBinaryId}"`);
+      }
+
+      watermarkedResponse = await axios.post(`${PYTHON_API_BASE_URL}${endpoint}`, payload);
+
+      const responseData = watermarkedResponse.data;
+      let base64_audio, decoded_message, status;
+
+      if (endpoint === '/add-watermark-url') {
+        base64_audio = responseData.base64_audio;
+        decoded_message = responseData.full_detected_message;
+        status = responseData.status;
+      } else {
+        base64_audio = responseData.base64_audio;
+        decoded_message = responseData.decoded_message;
+        status = responseData.status;
+      }
+
+      if (status !== "success") {
+        throw { status: 500, message: "Watermarking failed on Python BE" };
+      }
+
+      const watermarkedUrl = await uploadAudioToCloudinary(
+        `data:audio/${format};base64,${base64_audio}`,
+        format,
+        {
+          resource_type: "video",
+          folder: "audio_files",
+          fetch_format: 'wav'
+        }
+      );
+
+      console.log(`✅ Watermarking completed. Original: "${watermarkMessage || generatedWatermarkMessage}", Detected: "${decoded_message}"`);
+
+      console.log(watermarkedUrl);
+
+      // ✅ Update audioFile with result
+      audioFile.filePath = watermarkedUrl;
+      audioFile.watermarkMessage = watermarkBinaryId || watermarkBinaryId || 'Random watermark';
+      audioFile.processingStatus = "completed";
+      audioFile.isWatermarked = true;
+      await audioFile.save();
+      
+
+      // ✅ Create WatermarkedMessage with binary ID
+      await WatermarkedMessage.create({
+        _id: watermarkBinaryId,
+        audioFile: audioFile._id,
+        message: watermarkMessage || generatedWatermarkMessage,
+        createdBy: userId,
+        approved: true,
+        approvedAt: new Date()
+      });
+
+    } catch (error) {
+      console.error("❌ Error calling Python API:", error.response?.data || error.message);
+      audioFile.processingStatus = "failed";
+      audioFile.errorMessage = error.response?.data?.detail || error.message;
+      await audioFile.save();
+      throw { status: 500, message: "Watermarking failed: " + (error.response?.data?.detail || error.message) };
+    }
+
+    await audioFile.populate('uploadedBy', 'name email');
+    return audioFileDTO(audioFile);
+  } catch (error) {
+    console.error("Error in createAudioFileService:", error.message);
+    throw error;
+  }
 };
 
-export const detectWatermarkService = async (audioFile) => {
+
+export const detectWatermarkService = async (audioFile, userId) => {
   let uploadedAudioUrl;
 
   try {
     const format = audioFile.format || "wav";
 
-    // === 1. Upload to Cloudinary ===
-    uploadedAudioUrl = await uploadAudioToCloudinary(audioFile, format, {
+    // === 0. Lookup AudioFile from DB using filePath ===
+    const dbAudioFile = await AudioFile.findOne({ filePath: audioFile });
+
+    if (!dbAudioFile) {
+      throw { status: 404, message: "Audio file not found in database" };
+    }
+
+    // === 1. Verify the current user owns the file ===
+    if (dbAudioFile.uploadedBy.toString() !== userId.toString()) {
+      throw { status: 403, message: "You are not authorized to detect watermark for this audio file." };
+    }
+
+    // === 2. Upload to Cloudinary again (for detection) ===
+    uploadedAudioUrl = await uploadAudioToCloudinary(dbAudioFile.filePath, format, {
       resource_type: "video",
       folder: "audio_detect",
       fetch_format: "wav"
     });
 
-    // === 2. Call Python API ===
+    // === 3. Call Python API ===
     const response = await axios.post(
-      `${PYTHON_API_BASE_URL}/detect-watermark-sequential`,
-      {
-        audioUrl: uploadedAudioUrl
-      },
+      `${PYTHON_API_BASE_URL}/detect-watermark`,
+      { audioUrl: uploadedAudioUrl },
       {
         timeout: PYTHON_API_TIMEOUT,
         headers: { 'Content-Type': 'application/json' }
@@ -310,61 +334,64 @@ export const detectWatermarkService = async (audioFile) => {
     const {
       status,
       watermark_detected,
-      full_detected_message,
-      detected_chunks,
-      total_chunks,
-      confidence_scores = [] // fallback to empty array
+      decoded_message,
+      confidence = 0.0
     } = response.data;
 
-    if (status !== "success" && typeof watermark_detected === "undefined") {
+    if (status !== "done" || typeof watermark_detected === "undefined") {
       throw {
         status: 500,
         message: "Watermark detection failed on Python backend"
       };
     }
 
-    // === 3. Log detail output ===
-    console.log(`\n🎧 Watermark Detection Summary:`);
-    console.log(`   ✅ Detected: ${watermark_detected}`);
-    console.log(`   🧩 Chunks: ${detected_chunks.join(" | ")}`);
-    console.log(`   📝 Full Message: "${full_detected_message}"`);
+    let watermarkObj = null;
 
-    if (confidence_scores.length > 0) {
-      console.log(`   📈 Confidence Scores:`);
-      detected_chunks.forEach((chunk, index) => {
-        console.log(`      [${index + 1}] "${chunk}" - ${confidence_scores[index] ?? "?"}`);
-      });
-    }
-
-    // === 4. Return structured response ===
-    const detailedChunks = detected_chunks.map((chunk, i) => ({
-      chunkIndex: i,
-      text: chunk,
-      confidence: confidence_scores[i] ?? null
-    }));
-
-    return {
-      detected: watermark_detected,
-      message: full_detected_message,
-      totalChunks: total_chunks,
-      audioUrl: uploadedAudioUrl,
-      detailedChunks
-    };
-
-  } catch (error) {
-    // === 5. Fallback DB update ===
-    if (audioFile?._id) {
+    if (watermark_detected && decoded_message) {
       try {
-        await AudioFile.findByIdAndUpdate(audioFile._id, {
-          processingStatus: "detection_failed",
-          detectionTimestamp: new Date()
-        });
-      } catch (updateError) {
-        console.error("❌ Failed to update detection_failed:", updateError);
+        watermarkObj = await WatermarkedMessage.findOne({ _id: decoded_message })
+            .select('message createdAt -_id')
+            .populate({
+                path: 'createdBy',
+                select: 'name -_id'
+            });
+        console.log("watermarkObj", watermarkObj)
+      } catch (dbError) {
+        console.error("❌ Failed to fetch WatermarkedMessage:", dbError.message);
       }
     }
 
-    // === 6. Custom error handling ===
+    // === 4. Log summary ===
+    console.log(`\n🎧 Watermark Detection Summary:`);
+    console.log(`   ✅ Detected: ${watermark_detected}`);
+    console.log(`   🧬 16-bit Message: "${decoded_message}"`);
+    console.log(`   📈 Confidence: ${confidence}`);
+
+    // === 5. Return structured response ===
+    return {
+      detected: watermark_detected,
+      message: watermarkObj || decoded_message || null,
+      confidence,
+      audioUrl: uploadedAudioUrl
+    };
+
+  } catch (error) {
+    // === 6. DB fallback update ===
+    try {
+      if (audioFile?.filePath) {
+        await AudioFile.findOneAndUpdate(
+          { filePath: audioFileInput.filePath },
+          {
+            processingStatus: "detection_failed",
+            detectionTimestamp: new Date()
+          }
+        );
+      }
+    } catch (updateError) {
+      console.error("❌ Failed to update detection_failed:", updateError);
+    }
+
+    // === 7. Handle known errors ===
     const status = error.response?.status;
 
     if (status === 400) {
@@ -383,6 +410,9 @@ export const detectWatermarkService = async (audioFile) => {
     throw error;
   }
 };
+;
+
+
 
 
 
@@ -702,3 +732,17 @@ const logDownloadActivity = async (audioFileId, userId, type = 'single') => {
         // Don't throw error here as download should still work
     }
 };
+
+const generate16BitBinaryString = async () => {
+    try {
+    let bits = '';
+    for (let i = 0; i < 16; i++) {
+        bits += Math.round(Math.random()); // Append either 0 or 1
+    }
+    return bits;
+    } catch (error) {
+        console.error("Error generate16BitBinaryString:", error);
+        throw { status: 400, message: "Failed to generate16BitBinaryString" };
+    }
+
+}
