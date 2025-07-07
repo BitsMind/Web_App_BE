@@ -46,7 +46,7 @@ const audioFileSchema = new mongoose.Schema({
   watermarkMessage: {
     type: String,
     default: null,
-    maxlength: [500, "Watermark message cannot exceed 500 characters"],
+    maxlength: [20, "Watermark message cannot exceed 500 characters"],
     trim: true,
   },
 
