@@ -94,7 +94,7 @@ export const getAllAudioFileService = async (page, limit, all = false, includeFa
  */
 export const getAllAudioFileUserService = async (userId = null) => {
     try {
-        let filter = { processingStatus: { $in: ["done", "processing"] } };
+        let filter = { processingStatus: { $in: ["completed", "processing"] } };
         
         // If userId is provided, filter by user
         if (userId) {
@@ -104,10 +104,11 @@ export const getAllAudioFileUserService = async (userId = null) => {
 
 
         const audioFiles = await AudioFile.find(filter)
-            .populate('uploadedBy', 'name email')
-            .select('-__v')
-            .lean()
-            .exec();
+          .sort({createdAt: -1})
+          .populate('uploadedBy', 'name email')
+          .select('-__v')
+          .lean()
+          .exec();
 
         // Check if audio files exist
         if (!audioFiles || audioFiles.length === 0) {
@@ -259,8 +260,6 @@ export const createAudioFileService = async (newAudioFile, userId) => {
 
       console.log(`✅ Watermarking completed. Original: "${watermarkMessage || generatedWatermarkMessage}", Detected: "${decoded_message}"`);
 
-      console.log(watermarkedUrl);
-
       // ✅ Update audioFile with result
       audioFile.filePath = watermarkedUrl;
       audioFile.watermarkMessage = watermarkBinaryId || watermarkBinaryId || 'Random watermark';
@@ -300,31 +299,65 @@ export const detectWatermarkService = async (audioFile, userId) => {
   let uploadedAudioUrl;
 
   try {
-    const format = audioFile.format || "wav";
+    const {
+      format,
+      fileBuffer,
+      filePath,
+      fileBase64
+    } = audioFile;
 
-    // === 0. Lookup AudioFile from DB using filePath ===
-    const dbAudioFile = await AudioFile.findOne({ filePath: audioFile });
 
-    if (!dbAudioFile) {
-      throw { status: 404, message: "Audio file not found in database" };
+
+    if (!format) {
+      throw { status: 400, message: "File format is required!" };
     }
 
-    // === 1. Verify the current user owns the file ===
-    if (dbAudioFile.uploadedBy.toString() !== userId.toString()) {
-      throw { status: 403, message: "You are not authorized to detect watermark for this audio file." };
+    if (!userId) {
+      throw { status: 400, message: "User ID is required!" };
     }
 
-    // === 2. Upload to Cloudinary again (for detection) ===
-    uploadedAudioUrl = await uploadAudioToCloudinary(dbAudioFile.filePath, format, {
+    if (!fileBuffer && !filePath && !fileBase64) {
+      throw {
+        status: 400,
+        message: "Audio file data is required! Provide fileBuffer, filePath, or fileBase64"
+      };
+    }
+
+    const allowedFormats = ['mp3', 'wav', 'flac', 'mp4', 'm4a'];
+    if (!allowedFormats.includes(format.toLowerCase())) {
+      throw {
+        status: 400,
+        message: `Unsupported format. Allowed formats: ${allowedFormats.join(', ')}`
+      };
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      throw { status: 404, message: "User not found!" };
+    }
+
+    // === Prepare audio for Cloudinary ===
+    let audioDataToUpload;
+    if (fileBuffer) {
+      audioDataToUpload = `data:audio/${format};base64,${fileBuffer.toString('base64')}`;
+    } else if (fileBase64) {
+      audioDataToUpload = fileBase64.startsWith('data:')
+        ? fileBase64
+        : `data:audio/${format};base64,${fileBase64}`;
+    } else {
+      audioDataToUpload = filePath;
+    }
+
+    const cloudinaryUploadUrl = await uploadAudioToCloudinary(audioDataToUpload, format, {
       resource_type: "video",
-      folder: "audio_detect",
+      folder: "detect_audio_files",
       fetch_format: "wav"
     });
 
-    // === 3. Call Python API ===
+    // === Call Python API ===
     const response = await axios.post(
       `${PYTHON_API_BASE_URL}/detect-watermark`,
-      { audioUrl: uploadedAudioUrl },
+      { audioUrl: cloudinaryUploadUrl },
       {
         timeout: PYTHON_API_TIMEOUT,
         headers: { 'Content-Type': 'application/json' }
@@ -350,24 +383,22 @@ export const detectWatermarkService = async (audioFile, userId) => {
     if (watermark_detected && decoded_message) {
       try {
         watermarkObj = await WatermarkedMessage.findOne({ _id: decoded_message })
-            .select('message createdAt -_id')
-            .populate({
-                path: 'createdBy',
-                select: 'name -_id'
-            });
-        console.log("watermarkObj", watermarkObj)
+          .select('message createdAt -_id')
+          .populate({
+            path: 'createdBy',
+            select: 'name -_id'
+          });
+        console.log("✅ watermarkObj:", watermarkObj);
       } catch (dbError) {
         console.error("❌ Failed to fetch WatermarkedMessage:", dbError.message);
       }
     }
 
-    // === 4. Log summary ===
     console.log(`\n🎧 Watermark Detection Summary:`);
     console.log(`   ✅ Detected: ${watermark_detected}`);
-    console.log(`   🧬 16-bit Message: "${decoded_message}"`);
+    console.log(`   🧬 Decoded Message: "${decoded_message}"`);
     console.log(`   📈 Confidence: ${confidence}`);
-
-    // === 5. Return structured response ===
+    
     return {
       detected: watermark_detected,
       message: watermarkObj || decoded_message || null,
@@ -376,11 +407,10 @@ export const detectWatermarkService = async (audioFile, userId) => {
     };
 
   } catch (error) {
-    // === 6. DB fallback update ===
     try {
       if (audioFile?.filePath) {
         await AudioFile.findOneAndUpdate(
-          { filePath: audioFileInput.filePath },
+          { filePath: audioFile.filePath },
           {
             processingStatus: "detection_failed",
             detectionTimestamp: new Date()
@@ -388,16 +418,15 @@ export const detectWatermarkService = async (audioFile, userId) => {
         );
       }
     } catch (updateError) {
-      console.error("❌ Failed to update detection_failed:", updateError);
+      console.error("❌ Failed to update detection_failed status:", updateError);
     }
 
-    // === 7. Handle known errors ===
     const status = error.response?.status;
 
     if (status === 400) {
       throw { status: 400, message: error.response?.data?.detail || "Bad request to detection API" };
     } else if (status === 404) {
-      throw { status: 404, message: "Audio file not accessible or Python API missing" };
+      throw { status: 404, message: "Audio file not accessible or not found" };
     } else if (status >= 500) {
       throw { status: 500, message: "Python API server error during detection" };
     } else if (error.code === 'ECONNREFUSED') {
@@ -410,10 +439,6 @@ export const detectWatermarkService = async (audioFile, userId) => {
     throw error;
   }
 };
-;
-
-
-
 
 
 /**

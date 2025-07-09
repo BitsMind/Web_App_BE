@@ -207,7 +207,7 @@ export const downloadAudioFile = async (req, res) => {
 
 export const detectWatermark = async (req, res) => {
     try {
-        const {audioFile } = req.body;
+        const {audioFile} = req.body;
         const userId = req.user?.id || null;
         const result = await detectWatermarkService(audioFile, userId);
 
