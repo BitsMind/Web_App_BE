@@ -386,18 +386,26 @@ export const detectWatermarkService = async (audioFile, userId) => {
           .select('message createdAt -_id')
           .populate({
             path: 'createdBy',
-            select: 'name -_id'
+            select: 'name _id'
           });
-        console.log("✅ watermarkObj:", watermarkObj);
-      } catch (dbError) {
+        } catch (dbError) {
         console.error("❌ Failed to fetch WatermarkedMessage:", dbError.message);
       }
     }
 
-    console.log(`\n🎧 Watermark Detection Summary:`);
-    console.log(`   ✅ Detected: ${watermark_detected}`);
-    console.log(`   🧬 Decoded Message: "${decoded_message}"`);
-    console.log(`   📈 Confidence: ${confidence}`);
+    if (watermarkObj.createdBy._id.toString() !== userId) {
+      throw {
+        status: 401,
+        message: "Unauthorized!"
+      };
+    }
+
+    if (confidence && confidence < 0.5) {
+      return {
+        detected: false,
+        message: "Detect failed!"
+      }
+    }
     
     return {
       detected: watermark_detected,
@@ -662,7 +670,7 @@ export const generateDownloadUrlService = async (audioFileId, userId) => {
         }
 
         // Check if file is ready for download
-        if (audioFile.processingStatus !== 'done') {
+        if (audioFile.processingStatus !== 'completed') {
             throw { status: 400, message: "Audio file is not ready for download!" };
         }
 
