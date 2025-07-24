@@ -34,7 +34,13 @@ const watermarkedMessageSchema = new mongoose.Schema({
   approvedAt: {
     type: Date,
     default: null,
-  }
+  },
+
+  detectionCount: {
+    type: Number,
+    default: 0
+  },
+
 }, {
   timestamps: true,
   versionKey: false

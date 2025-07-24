@@ -33,6 +33,16 @@ export const audioCloudinary = () => {
     secure: true
   });
   return cloudinary;
+}
+
+export const avatarCloudinary = () => {
+  cloudinary.config({
+    cloud_name: process.env.AUDIO_CLOUD_NAME,
+    api_key: process.env.AUDIO_API_KEY,
+    api_secret: process.env.AUDIO_API_SECRET,
+    secure: true
+  });
+  return cloudinary;
   
 }
 
@@ -60,6 +70,30 @@ export const testAudioConnection = async () => {
   }
 }
 
+export const testAvatarConnection = async () => {
+  try {
+    const cloudinary = avatarCloudinary()
+    const result = await cloudinary.api.ping();
+    console.log("Avatar Cloudinary connection successful");
+    return { 
+      success: true, 
+      message: "Avatar Cloudinary connection successful", 
+      result,
+      type: "user_avatars"
+    };
+  } catch (error) {
+    console.error("Audio Cloudinary connection failed:", error.message);
+    return { 
+      success: false, 
+      message: "Audio Cloudinary connection failed", 
+      error,
+      type: "user_avatars"
+    };
+  }
+}
 
 
-export default testAudioConnection;
+
+
+
+export default {testAudioConnection, testAvatarConnection};

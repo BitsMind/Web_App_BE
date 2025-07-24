@@ -296,15 +296,22 @@ export const createAudioFileService = async (newAudioFile, userId) => {
         }
       );
       
-      // ✅ Update audioFile with result
+      // Update audioFile with result
       audioFile.filePath = watermarkedUrl;
       audioFile.watermarkMessage = watermarkBinaryId;
       audioFile.processingStatus = "completed";
       audioFile.isWatermarked = true;
       await audioFile.save();
+
+      await User.findByIdAndUpdate(
+        userId,
+        {
+          $inc: {usedStorage: fileSize}
+        }
+      )
       
 
-      // ✅ Create WatermarkedMessage with binary ID
+      // Create WatermarkedMessage with binary ID
       await WatermarkedMessage.create({
         _id: watermarkBinaryId,
         audioFile: audioFile._id,
@@ -418,40 +425,91 @@ export const detectWatermarkService = async (audioFile, userId) => {
     }
 
     let watermarkObj = null;
+    let isOwner = false;
+    let ownerInfo = null;
 
     if (watermark_detected && decoded_message) {
       try {
         watermarkObj = await WatermarkedMessage.findOne({ _id: decoded_message })
-          .select('message createdAt -_id')
+          .select('message createdAt detectionCount -_id')
           .populate({
             path: 'createdBy',
             select: 'name _id'
           });
-        } catch (dbError) {
+
+        if (watermarkObj) {
+          // Check if current user is the owner
+          isOwner = watermarkObj.createdBy._id.toString() === userId;
+          
+          // Store owner info for response
+          ownerInfo = {
+            id: watermarkObj.createdBy._id,
+            name: watermarkObj.createdBy.name
+          };
+
+          // Increment detection count
+          await WatermarkedMessage.findOneAndUpdate(
+            { _id: decoded_message },
+            { 
+              $inc: { detectionCount: 1 },
+              lastDetectedAt: new Date(),
+              $addToSet: { 
+                detectedBy: {
+                  userId: userId,
+                  detectedAt: new Date(),
+                  isOwner: isOwner
+                }
+              }
+            }
+          );
+        }
+      } catch (dbError) {
         console.error("❌ Failed to fetch WatermarkedMessage:", dbError.message);
       }
-    }
-
-    if (watermarkObj.createdBy._id.toString() !== userId) {
-      throw {
-        status: 401,
-        message: "Unauthorized!"
-      };
     }
 
     if (confidence && confidence < 0.5) {
       return {
         detected: false,
-        message: "Detect failed!"
+        message: "Detection failed due to low confidence!",
+        confidence
       }
     }
     
-    return {
+    // Prepare response based on ownership
+    const responseData = {
       detected: watermark_detected,
-      message: watermarkObj || decoded_message || null,
       confidence,
-      audioUrl: uploadedAudioUrl
+      audioUrl: uploadedAudioUrl,
+      isOwner: isOwner
     };
+
+    if (watermark_detected && watermarkObj) {
+      if (isOwner) {
+        // Owner gets full access to their watermarked message
+        responseData.message = {
+          content: watermarkObj.message,
+          createdAt: watermarkObj.createdAt,
+          detectionCount: (watermarkObj.detectionCount || 0) + 1
+        };
+        responseData.owner = ownerInfo;
+      } else {
+        // Non-owner only gets owner information and detection count
+        responseData.message = {
+          content: "This audio file contains a watermark.",
+          detectionCount: (watermarkObj.detectionCount || 0) + 1
+        };
+        responseData.owner = ownerInfo;
+        responseData.note = `This watermarked audio belongs to ${ownerInfo.name}`;
+      }
+    } else if (watermark_detected && decoded_message) {
+      // Fallback if watermarkObj not found but watermark detected
+      responseData.message = decoded_message;
+    } else {
+      responseData.message = null;
+    }
+
+    return responseData;
 
   } catch (error) {
     try {

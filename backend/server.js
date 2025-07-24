@@ -11,7 +11,7 @@ import compression from "compression";
 // Route imports
 import authRoute from "../appModule/Auth/routes/auth.routes.js"
 import audioRoute from "../appModule/AudioFile/routes/audio.routes.js"
-import testAudioConnection from "./lib/cloudinary/cloudinary.js";
+import {testAudioConnection,  testAvatarConnection}  from "./lib/cloudinary/cloudinary.js";
 
 // Load environment variables
 dotenv.config();
@@ -51,7 +51,7 @@ app.use(cors({
 }));
 
 // Request parsing middleware
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true })); 
 app.use(cookieParser()); // Parse cookies from request
 app.use(compression()); // Compress responses to speed up transmission
@@ -92,7 +92,8 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
   try {
       // Connect to MongoDB & Cloudinary first
-      await testAudioConnection() 
+      await testAudioConnection()
+      await testAvatarConnection()
       await connectMongoDB();
       
       // Start the server after successful DB connection
