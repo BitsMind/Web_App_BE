@@ -12,17 +12,30 @@ const userSchema = new mongoose.Schema({
         trim: true,
         unique: true,
       },
+    avatar: {
+        type: String,
+        default: null,
+        validate: {
+            validator: function(v) {
+                // Allow null/undefined or valid URL format
+                return !v || /^https?:\/\/.+/.test(v);
+            },
+            message: "Avatar must be a valid URL"
+        }
+    },
 
-      audioFiles: [
-        {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "AudioFile",
-        },
-      ],
-      totalProcessedFiles: {
-        type: Number,
-        default: 0,
+    audioFiles: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "AudioFile",
       },
+    ],
+
+    totalProcessedFiles: {
+      type: Number,
+      default: 0,
+    },
+    
     totalPaid: {
         type: Number,
         default: 0,
@@ -31,8 +44,15 @@ const userSchema = new mongoose.Schema({
     accountId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Account"
+    },
+
+    usedStorage: {
+      type: Number,
+      default:0,
     }
 }, {timestamps: true})
+// Index for better query performance
+userSchema.index({ accountId: 1 });
 
 const User = mongoose.model("User", userSchema);
 
