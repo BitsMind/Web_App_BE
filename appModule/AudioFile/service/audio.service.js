@@ -223,31 +223,48 @@ export const createAudioFileService = async (newAudioFile, userId) => {
             console.error("❌ Failed to fetch existing watermark:", dbError.message);
           }
 
-          if (existingWatermark && existingWatermark.createdBy._id.toString() === userId) {
-            // Same user's watermark - update audioFile and return
-            audioFile.filePath = audioUrl;
-            audioFile.watermarkMessage = decoded_message;
-            audioFile.processingStatus = "completed";
-            audioFile.isWatermarked = true;
-            await audioFile.save();
+          if (existingWatermark) {
+            console.log(existingWatermark.createdBy._id.toString() === userId);
 
-            await audioFile.populate('uploadedBy', 'name email');
-            return audioFileDTO(audioFile);
+            if (existingWatermark.createdBy._id.toString() === userId) {
+              // Same user's watermark - update audioFile and return
+              audioFile.filePath = audioUrl;
+              audioFile.watermarkMessage = decoded_message;
+              audioFile.processingStatus = "completed";
+              audioFile.isWatermarked = true;
+              await audioFile.save();
+
+              await audioFile.populate('uploadedBy', 'name email');
+              return audioFileDTO(audioFile);
+            } else {
+              // Different user's watermark - throw error with owner name
+              const ownerName = existingWatermark.createdBy.name || 'Unknown User';
+              throw { 
+                status: 400, 
+                message: `Audio file already contains watermark owned by ${ownerName}. Cannot proceed with watermarking.` 
+              };
+            }
           } else {
+            // Watermark detected but no record found in database
             throw { 
               status: 400, 
-              message: "Audio file already contains another user's watermark. Cannot proceed with watermarking." 
+              message: "Audio file already contains an unregistered watermark. Cannot proceed with watermarking." 
             };
           }
         }
         
         console.log("✅ No existing watermark detected, proceeding with watermarking...");
       } catch (detectionError) {
+        // Only throw the "other user's watermark" error if it was explicitly thrown above
+        if (detectionError.status === 400 && 
+            (detectionError.message.includes("watermark owned by") || 
+             detectionError.message.includes("unregistered watermark"))) {
+          throw detectionError;
+        }
+        
+        // For all other detection errors (API failures, network issues, etc.), just log and continue
         console.log("⚠️ Watermark detection failed, proceeding with watermarking anyway:", detectionError.message);
-        throw { 
-              status: 400, 
-              message: "Audio file already contains another user's watermark. Cannot proceed with watermarking." 
-            };
+        // Continue to watermarking process - don't throw error
       }
 
       let watermarkedResponse;

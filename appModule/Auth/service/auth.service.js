@@ -170,7 +170,7 @@ export const getMeService = async(userId, res) => {
  * @param {boolean} all - Whether to return all files or paginated
  * @returns {object} User profile data with audio files and enhanced stats
  */
-export const getUserProfileService = async (userId, page, limit, all = false) => {
+export const getUserProfileService = async (userId, page, limit, all = true) => {
     try {
         const pageNumber = parseInt(page) || 1;
         const limitNumber = parseInt(limit) || 8;
@@ -178,6 +178,7 @@ export const getUserProfileService = async (userId, page, limit, all = false) =>
         if (pageNumber < 1 || limitNumber < 1) {
             throw { status: 400, message: "Invalid pagination parameters" };
         }
+        
         if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
             throw { status: 400, message: "Valid user ID is required" };
         }
@@ -244,14 +245,15 @@ export const getUserProfileService = async (userId, page, limit, all = false) =>
             audioFileQuery = audioFileQuery.skip(skip).limit(limitNumber);
         }
 
+        // Fixed: populate watermarkedMessage (ObjectId reference) instead of watermarkMessage (String)
         const audioFiles = await audioFileQuery
             .populate({
-                path: "watermarkMessage",
+                path: "watermarkedMessage",
                 select: "message detectionCount lastDetectedAt"
             })
             .lean();
 
-        // Enhanced audio file formatting with additional info
+        // Enhanced audio file formatting with corrected field access
         const formattedAudioFiles = audioFiles.map((file) => ({
             id: file?._id,
             fileName: file?.fileName,
@@ -259,17 +261,40 @@ export const getUserProfileService = async (userId, page, limit, all = false) =>
             fileSize: file?.fileSize || 0,
             fileSizeFormatted: formatBytes(file?.fileSize || 0),
             format: file?.format,
-            duration: file?.duration || null, // If you track duration
             
-            // Watermark info
+            // Fixed: access duration from metadata if it exists there
+            duration: file?.metadata?.duration || file?.duration || null,
+            
+            // Watermark info - Fixed field access
             isWatermarked: file?.isWatermarked || false,
-            watermarkMessage: file?.watermarkMessage?.message || null,
-            watermarkDetectionCount: file?.watermarkMessage?.detectionCount || 0,
-            lastDetectedAt: file?.watermarkMessage?.lastDetectedAt || null,
+            
+            // Fixed: access the populated watermarkedMessage object
+            watermarkMessage: file?.watermarkedMessage?.message || file?.watermarkMessage || null,
+            watermarkDetectionCount: file?.watermarkedMessage?.detectionCount || file?.detectionAttempts || 0,
+            lastDetectedAt: file?.watermarkedMessage?.lastDetectedAt || file?.detectionTimestamp || null,
+            
+            // Detection info from schema
+            watermarkDetected: file?.watermarkDetected,
+            confidence: file?.confidence,
+            detectedMessage: file?.detectedMessage,
             
             // Processing info
             processingStatus: file?.processingStatus || "pending",
             processedAt: file?.processedAt,
+            
+            // Additional metadata
+            metadata: {
+                bitrate: file?.metadata?.bitrate,
+                sampleRate: file?.metadata?.sampleRate,
+                channels: file?.metadata?.channels
+            },
+            
+            // Category and tags
+            category: file?.category,
+            tags: file?.tags || [],
+            
+            // Privacy
+            isPublic: file?.isPublic || false,
             
             // Timestamps
             createdAt: file?.createdAt,
@@ -282,8 +307,17 @@ export const getUserProfileService = async (userId, page, limit, all = false) =>
         // Additional statistics for the current page/all files
         const currentPageStats = {
             totalSizeCurrentPage: formattedAudioFiles.reduce((sum, file) => sum + (file.fileSize || 0), 0),
+            totalSizeCurrentPageFormatted: formatBytes(
+                formattedAudioFiles.reduce((sum, file) => sum + (file.fileSize || 0), 0)
+            ),
             watermarkedFilesCount: formattedAudioFiles.filter(file => file.isWatermarked).length,
-            processingStatusCounts: getProcessingStatusCounts(formattedAudioFiles)
+            detectedWatermarkCount: formattedAudioFiles.filter(file => file.watermarkDetected === true).length,
+            processingStatusCounts: getProcessingStatusCounts(formattedAudioFiles),
+            categoryCounts: formattedAudioFiles.reduce((counts, file) => {
+                const category = file.category || 'other';
+                counts[category] = (counts[category] || 0) + 1;
+                return counts;
+            }, {})
         };
 
         return {
@@ -297,7 +331,23 @@ export const getUserProfileService = async (userId, page, limit, all = false) =>
 
     } catch (error) {
         console.error("Error in getUserProfileService:", error.message);
-        throw error;
+        
+        // Return more specific error information
+        if (error.status) {
+            throw error;
+        }
+        
+        // Handle database errors
+        if (error.name === 'CastError') {
+            throw { status: 400, message: "Invalid ID format" };
+        }
+        
+        if (error.name === 'ValidationError') {
+            throw { status: 400, message: error.message };
+        }
+        
+        // Generic server error
+        throw { status: 500, message: "Internal server error" };
     }
 };
 

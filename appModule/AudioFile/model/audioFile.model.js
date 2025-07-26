@@ -35,8 +35,13 @@ const audioFileSchema = new mongoose.Schema({
     index: true, // Index for user-specific queries
   },
   watermarkMessage: {
+    type: String,
+    // ref: "WatermarkedMessage",
+    default: null
+  },
+  watermarkedMessage: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "WatermarkMessage", // Replace with your actual model name
+    ref: "WatermarkedMessage",
     default: null
   },
   processingStatus: {
