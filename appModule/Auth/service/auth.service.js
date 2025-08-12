@@ -170,22 +170,13 @@ export const getMeService = async(userId, res) => {
  * @param {boolean} all - Whether to return all files or paginated
  * @returns {object} User profile data with audio files and enhanced stats
  */
-export const getUserProfileService = async (userId, page, limit, all = true) => {
+export const getUserProfileService = async (userId) => {
     try {
-        const pageNumber = parseInt(page) || 1;
-        const limitNumber = parseInt(limit) || 8;
-
-        if (pageNumber < 1 || limitNumber < 1) {
-            throw { status: 400, message: "Invalid pagination parameters" };
-        }
-        
         if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
             throw { status: 400, message: "Valid user ID is required" };
         }
 
-        const skip = (pageNumber - 1) * limitNumber;
-
-        // Get total count for pagination
+        // Get total count for stats
         const totalAudioFiles = await AudioFile.countDocuments({ uploadedBy: userId });
 
         // Get user information with enhanced stats and account details
@@ -231,22 +222,14 @@ export const getUserProfileService = async (userId, page, limit, all = true) => 
         if (totalAudioFiles === 0) {
             return {
                 audioFiles: [],
-                totalPages: 0,
-                currentPage: pageNumber,
                 totalAudioFiles: 0,
                 userStats: userStats
             };
         }
 
-        let audioFileQuery = AudioFile.find({ uploadedBy: userId })
-            .sort({ createdAt: -1 });
-
-        if (!all) {
-            audioFileQuery = audioFileQuery.skip(skip).limit(limitNumber);
-        }
-
-        // Fixed: populate watermarkedMessage (ObjectId reference) instead of watermarkMessage (String)
-        const audioFiles = await audioFileQuery
+        // Get all audio files for the user (no pagination)
+        const audioFiles = await AudioFile.find({ uploadedBy: userId })
+            .sort({ createdAt: -1 })
             .populate({
                 path: "watermarkedMessage",
                 select: "message detectionCount lastDetectedAt"
@@ -304,10 +287,11 @@ export const getUserProfileService = async (userId, page, limit, all = true) => 
             uploadedAgo: getTimeAgo(file?.createdAt)
         }));
 
-        // Additional statistics for the current page/all files
-        const currentPageStats = {
-            totalSizeCurrentPage: formattedAudioFiles.reduce((sum, file) => sum + (file.fileSize || 0), 0),
-            totalSizeCurrentPageFormatted: formatBytes(
+        // Statistics for all files
+        const fileStats = {
+            totalFiles: formattedAudioFiles.length,
+            totalSize: formattedAudioFiles.reduce((sum, file) => sum + (file.fileSize || 0), 0),
+            totalSizeFormatted: formatBytes(
                 formattedAudioFiles.reduce((sum, file) => sum + (file.fileSize || 0), 0)
             ),
             watermarkedFilesCount: formattedAudioFiles.filter(file => file.isWatermarked).length,
@@ -317,16 +301,19 @@ export const getUserProfileService = async (userId, page, limit, all = true) => 
                 const category = file.category || 'other';
                 counts[category] = (counts[category] || 0) + 1;
                 return counts;
+            }, {}),
+            formatCounts: formattedAudioFiles.reduce((counts, file) => {
+                const format = file.format || 'unknown';
+                counts[format] = (counts[format] || 0) + 1;
+                return counts;
             }, {})
         };
 
         return {
             audioFiles: formattedAudioFiles,
-            totalPages: all ? 1 : Math.ceil(totalAudioFiles / limitNumber),
-            currentPage: all ? 1 : pageNumber,
             totalAudioFiles,
             userStats: userStats,
-            currentPageStats: currentPageStats
+            fileStats: fileStats
         };
 
     } catch (error) {
@@ -350,6 +337,7 @@ export const getUserProfileService = async (userId, page, limit, all = true) => 
         throw { status: 500, message: "Internal server error" };
     }
 };
+
 
 /**
  * Update user profile information (name and avatar)
