@@ -132,10 +132,10 @@ export const getAllAudioFileUserService = async (userId = null) => {
 };
 
 /**
- * Create a new audio file record
+ * Create a new audio file record with enhanced comparison plot support
  * @param {Object} newAudioFile - Audio file data
  * @param {string} userId - User ID who uploaded the file
- * @returns {Object} Created audio file
+ * @returns {Object} Created audio file with comparison plot
  */
 
 export const createAudioFileService = async (newAudioFile, userId) => {
@@ -185,12 +185,31 @@ export const createAudioFileService = async (newAudioFile, userId) => {
       fetch_format: 'wav'
     });
 
+    // Determine the watermark message to use
+    let finalWatermarkMessage;
+    let shouldWatermark = true;
+
+    if (!watermarkMessage || watermarkMessage.trim() === '') {
+      // No watermark message provided - use owner info as default
+      finalWatermarkMessage = `Owner: ${user.name || 'Unknown'} (ID: ${userId})`;
+      console.log(`📝 No watermark message provided, using default: "${finalWatermarkMessage}"`);
+    } else if (watermarkMessage.length < 2) {
+      // Watermark message too short - skip watermarking
+      finalWatermarkMessage = null;
+      shouldWatermark = false;
+      console.log(`⚠️ Watermark message too short (${watermarkMessage.length} chars), skipping watermarking`);
+    } else {
+      // Use provided watermark message
+      finalWatermarkMessage = watermarkMessage;
+      console.log(`📝 Using provided watermark message: "${finalWatermarkMessage}"`);
+    }
+
     const audioFile = await AudioFile.create({
       fileName,
       filePath: audioUrl,
       fileSize,
       format: format.toLowerCase(),
-      watermarkMessage: watermarkMessage || null,
+      watermarkMessage: finalWatermarkMessage,
       uploadedBy: userId,
       processingStatus: "pending"
     });
@@ -232,6 +251,9 @@ export const createAudioFileService = async (newAudioFile, userId) => {
               audioFile.watermarkMessage = decoded_message;
               audioFile.processingStatus = "completed";
               audioFile.isWatermarked = true;
+              audioFile.confidence = confidence;
+              audioFile.detectedMessage = decoded_message;
+              audioFile.detectionTimestamp = new Date();
               await audioFile.save();
 
               await audioFile.populate('uploadedBy', 'name email');
@@ -267,42 +289,67 @@ export const createAudioFileService = async (newAudioFile, userId) => {
         // Continue to watermarking process - don't throw error
       }
 
-      let watermarkedResponse;
-      let payload;
-
-      // 🆕 Generate 16-byte binary watermark ID
-      const watermarkBinaryId = await generate16BitBinaryString();
-      const generatedWatermarkMessage = watermarkBinaryId.toString('hex');
-
-      // Only use URL endpoint for long messages (>= 2 characters)
-      if (!watermarkMessage || watermarkMessage.trim() === '' || watermarkMessage.length < 2) {
-        // Skip watermarking for empty or very short messages
+      // Skip watermarking if no valid message
+      if (!shouldWatermark) {
+        console.log("⏭️ Skipping watermarking - no valid watermark message");
         audioFile.processingStatus = "completed";
         audioFile.isWatermarked = false;
         await audioFile.save();
         
         await audioFile.populate('uploadedBy', 'name email');
         return audioFileDTO(audioFile);
-      } else {
-        // Use URL endpoint for long messages
-        payload = {
-          audioUrl: audioUrl,
-          watermarkMessage: watermarkBinaryId
-        };
-        console.log(`🔄 Using URL watermarking for long message: "${watermarkBinaryId}"`);
       }
 
-      watermarkedResponse = await axios.post(`${PYTHON_API_BASE_URL}/add-watermark-url`, payload);
+      let watermarkedResponse;
+      let payload;
+
+      // Generate 16-byte binary watermark ID
+      const watermarkBinaryId = await generate16BitBinaryString();
+      
+      // Use URL endpoint for watermarking
+      payload = {
+        audioUrl: audioUrl,
+        watermarkMessage: watermarkBinaryId
+      };
+      console.log(`🔄 Using URL watermarking with binary ID: "${watermarkBinaryId}"`);
+      console.log(`📝 Watermark will contain: "${finalWatermarkMessage}"`);
+
+      // Call watermarking endpoint
+      watermarkedResponse = await axios.post(`${PYTHON_API_BASE_URL}/add-watermark-url`, payload, {
+        timeout: PYTHON_API_TIMEOUT || 30000,
+        headers: { 'Content-Type': 'application/json' }
+      });
 
       const responseData = watermarkedResponse.data;
-      const base64_audio = responseData.base64_audio;
-      const decoded_message = responseData.full_detected_message;
-      const status = responseData.status;
+      const { 
+        status, 
+        base64_audio, 
+        decoded_message, 
+        audio_info
+      } = responseData;
 
       if (status !== "success") {
-        throw { status: 500, message: "Watermarking failed on Python BE" };
+        const errorMsg = responseData.error || "Watermarking failed on Python API";
+        
+        // Check if it's the "already watermarked" error from Python API
+        if (errorMsg.includes("already watermarked") || errorMsg.includes("already contains watermark")) {
+          console.log("⚠️ Python API detected existing watermark, handling gracefully");
+          audioFile.processingStatus = "failed";
+          audioFile.errorMessage = "Audio file already contains watermark - use unwatermarked audio";
+          await audioFile.save();
+          
+          throw { 
+            status: 400, 
+            message: "Audio file already contains watermark. Please use original unwatermarked audio file." 
+          };
+        }
+        
+        throw { status: 500, message: errorMsg };
       }
 
+      console.log("✅ Watermarking successful, processing results...");
+
+      // Upload watermarked audio to Cloudinary
       const watermarkedUrl = await uploadAudioToCloudinary(
         `data:audio/${format};base64,${base64_audio}`,
         format,
@@ -312,47 +359,189 @@ export const createAudioFileService = async (newAudioFile, userId) => {
           fetch_format: 'wav'
         }
       );
-      
-      // Update audioFile with result
+
+      // Update audioFile with watermarking data
       audioFile.filePath = watermarkedUrl;
       audioFile.watermarkMessage = watermarkBinaryId;
       audioFile.processingStatus = "completed";
       audioFile.isWatermarked = true;
+      audioFile.detectedMessage = decoded_message;
+      audioFile.detectionTimestamp = new Date();
+
+      // Save enhanced audio info
+      if (audio_info) {
+        audioFile.audioInfo = {
+          originalSampleRate: audio_info.original_sample_rate,
+          processedSampleRate: audio_info.processed_sample_rate,
+          watermarkConfidence: audio_info.watermark_confidence,
+          channels: audio_info.channels,
+          samples: audio_info.samples
+        };
+        
+        // Update confidence and metadata
+        audioFile.confidence = audio_info.watermark_confidence;
+        audioFile.metadata = audioFile.metadata || {};
+        audioFile.metadata.duration = audio_info.duration_seconds;
+        audioFile.metadata.sampleRate = audio_info.processed_sample_rate;
+        audioFile.metadata.channels = audio_info.channels;
+      }
+
       await audioFile.save();
 
+      // Update user storage
       await User.findByIdAndUpdate(
         userId,
-        {
-          $inc: {usedStorage: fileSize}
-        }
-      )
-      
+        { $inc: { usedStorage: fileSize } }
+      );
 
-      // Create WatermarkedMessage with binary ID
+      // Create WatermarkedMessage with binary ID and the actual message content
       await WatermarkedMessage.create({
         _id: watermarkBinaryId,
         audioFile: audioFile._id,
-        message: watermarkMessage || generatedWatermarkMessage,
+        message: finalWatermarkMessage, // This contains the actual watermark content
         createdBy: userId,
         approved: true,
-        approvedAt: new Date()
+        approvedAt: new Date(),
+        messageType: !watermarkMessage || watermarkMessage.trim() === '' ? 'owner_default' : 'user_provided' // Track the source
       });
+
+      console.log("✅ Audio file processing completed!");
+      console.log(`📋 Watermark summary:
+        - Binary ID: ${watermarkBinaryId}
+        - Message: ${finalWatermarkMessage}
+        - Type: ${!watermarkMessage || watermarkMessage.trim() === '' ? 'Owner Default' : 'User Provided'}
+        - Detected: ${decoded_message}`);
 
     } catch (error) {
       console.error("❌ Error calling Python API:", error.response?.data || error.message);
+      
+      let errorMessage = error.response?.data?.detail || error.message;
+      if (error.message.includes('timeout')) {
+        errorMessage = "Processing timeout - file may be too large or server overloaded";
+      }
+      
       audioFile.processingStatus = "failed";
-      audioFile.errorMessage = error.response?.data?.detail || error.message;
+      audioFile.errorMessage = errorMessage;
       await audioFile.save();
-      throw { status: 500, message: "Watermarking failed: " + (error.response?.data?.detail || error.message) };
+      
+      throw { status: 500, message: "Watermarking failed: " + errorMessage };
     }
 
     await audioFile.populate('uploadedBy', 'name email');
     return audioFileDTO(audioFile);
+    
   } catch (error) {
     console.error("Error in createAudioFileService:", error.message);
     throw error;
   }
 };
+
+
+// /**
+//  * 🆕 Generate comparison plot for existing audio files
+//  * @param {string} audioFileId - Audio file ID
+//  * @param {string} userId - User ID
+//  * @returns {Object} Updated audio file with comparison plot
+//  */
+// export const generateComparisonPlotService = async (audioFileId, userId) => {
+//   try {
+//     const audioFile = await AudioFile.findOne({ 
+//       _id: audioFileId,
+//       uploadedBy: userId,
+//       isActive: true 
+//     });
+
+//     if (!audioFile) {
+//       throw { status: 404, message: "Audio file not found" };
+//     }
+
+//     if (!audioFile.isWatermarked) {
+//       throw { status: 400, message: "Cannot generate comparison plot for non-watermarked audio" };
+//     }
+
+//     // Check if plot already exists and is recent (less than 1 hour old)
+//     if (audioFile.comparisonPlot && audioFile.plotGeneratedAt) {
+//       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+//       if (audioFile.plotGeneratedAt > oneHourAgo) {
+//         console.log("✅ Recent comparison plot already exists, returning existing plot");
+//         return audioFileDTO(audioFile);
+//       }
+//     }
+
+//     console.log(`🔄 Generating comparison plot for audio file: ${audioFileId}`);
+
+//     // We need the original audio URL for comparison - this would need to be stored
+//     // For now, we'll use a different approach or require original URL to be provided
+//     throw { status: 501, message: "Comparison plot generation for existing files not yet implemented - requires original audio URL" };
+    
+//   } catch (error) {
+//     console.error("Error in generateComparisonPlotService:", error.message);
+//     throw error;
+//   }
+// };
+
+// /**
+//  * 🆕 Get comparison plot for an audio file
+//  * @param {string} audioFileId - Audio file ID
+//  * @param {string} userId - User ID
+//  * @returns {Object} Comparison plot data
+//  */
+// export const getComparisonPlotService = async (audioFileId, userId) => {
+//   try {
+//     const audioFile = await AudioFile.findOne({ 
+//       _id: audioFileId,
+//       uploadedBy: userId,
+//       isActive: true 
+//     }).select('comparisonPlot comparisonPlotUrl plotGeneratedAt plotGenerationError fileName isWatermarked');
+
+//     if (!audioFile) {
+//       throw { status: 404, message: "Audio file not found" };
+//     }
+
+//     if (!audioFile.isWatermarked) {
+//       throw { status: 400, message: "No comparison plot available for non-watermarked audio" };
+//     }
+
+//     if (!audioFile.comparisonPlot && !audioFile.comparisonPlotUrl) {
+//       throw { status: 404, message: "No comparison plot found for this audio file" };
+//     }
+
+//     return {
+//       fileName: audioFile.fileName,
+//       comparisonPlot: audioFile.comparisonPlot,
+//       comparisonPlotUrl: audioFile.comparisonPlotUrl,
+//       plotGeneratedAt: audioFile.plotGeneratedAt,
+//       hasPlot: !!(audioFile.comparisonPlot || audioFile.comparisonPlotUrl)
+//     };
+    
+//   } catch (error) {
+//     console.error("Error in getComparisonPlotService:", error.message);
+//     throw error;
+//   }
+// };
+
+// // 🆕 Helper function to upload images to Cloudinary (you'll need to implement this)
+// async function uploadImageToCloudinary(imageData, options = {}) {
+//   // Implementation depends on your Cloudinary setup
+//   // This is a placeholder - replace with your actual Cloudinary image upload logic
+//   try {
+//     const cloudinary = require('cloudinary').v2;
+    
+//     const result = await cloudinary.uploader.upload(imageData, {
+//       resource_type: 'image',
+//       folder: options.folder || 'comparison_plots',
+//       format: options.format || 'png',
+//       public_id: options.public_id,
+//       overwrite: true,
+//       ...options
+//     });
+    
+//     return result.secure_url;
+//   } catch (error) {
+//     console.error('Cloudinary image upload failed:', error);
+//     throw error;
+//   }
+// }
 
 /**
  * Detect an audio file
@@ -484,6 +673,7 @@ export const detectWatermarkService = async (audioFile, userId) => {
         console.error("❌ Failed to fetch WatermarkedMessage:", dbError.message);
       }
     }
+    console.log(watermarkObj)
 
     if (confidence && confidence < 0.5) {
       return {
