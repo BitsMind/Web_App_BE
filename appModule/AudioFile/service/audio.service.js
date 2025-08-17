@@ -3,7 +3,7 @@ import { audioCloudinary } from "../../../backend/lib/cloudinary/cloudinary.js";
 import User from "../../User/models/user.models.js";
 import { audioFileDTO, audioFileUserDTO, watermarkDetectionDTO } from "../dto/audio.dto.js";
 import AudioFile from "../model/audioFile.model.js";
-import WatermarkedMessage from "../model/WatermarkedMessage.model.js";
+import WatermarkedMessage from "../../AudioFile/model/watermarkedMessage.model.js";
 import DownloadLog from "../model/DownloadLog.model.js";
 import dotenv from "dotenv";
 import path from "path";
