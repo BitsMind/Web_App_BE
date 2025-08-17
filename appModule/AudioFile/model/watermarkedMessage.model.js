@@ -51,4 +51,4 @@ watermarkedMessageSchema.index({ audioFile: 1, createdAt: -1 });
 
 const WatermarkedMessage = mongoose.model("WatermarkedMessage", watermarkedMessageSchema);
 
-export default WatermarkedMessage;
+export default WatermarkedMessage; 
