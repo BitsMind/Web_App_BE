@@ -24,6 +24,10 @@ const MAX_LOGIN_ATTEMPTS = 5;
 const LOGIN_LOCKOUT_DURATION = 15 * 60; // 15 minutes in seconds
 const VERIFICATION_EMAIL_EXPIRY = 10 * 60 * 1000; // 10 minutes
 
+const SAMESITE = process.env.COOKIE_SAME_SITE || "Lax"; 
+const DOMAIN = process.env.COOKIE_DOMAIN || ".voicemark-web-app.onrender.com";
+const SECURE = process.env.NODE_ENV === "production";
+
 /**
  * User registration service
  * @param {string} name - User's full name
@@ -593,25 +597,24 @@ const getProcessingStatusCounts = (files) => {
 //  * @param {object} res - Express response object
 //  */
 const clearAuthCookies = (res) => {
-    // Get the same domain used when setting cookies
-    const domain = ".url";
-    
+    // Get the same domain used when setting cookies    
+    const cookieConfig = {
+        httpOnly: true,
+        sameSite: SAMESITE,
+        domain: DOMAIN,
+        secure: SECURE
+    };
     // Clear accessToken cookie
     res.clearCookie('accessToken', {
-        httpOnly: true,
-        sameSite: 'Lax',
-        // domain: domain,
+        ...cookieConfig,
         path: '/api', // Match the path used when setting
-        secure: process.env.NODE_ENV === 'production'
+        
     });
     
     // Clear refreshToken cookie
     res.clearCookie('refreshToken', {
-        httpOnly: true,
-        sameSite: 'Lax',
-        // domain: domain,
+        ...cookieConfig,
         path: '/api/auth', // Match the path used when setting
-        secure: process.env.NODE_ENV === 'production'
     });
     
     console.log("Auth cookies cleared successfully");

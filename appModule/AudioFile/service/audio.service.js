@@ -11,9 +11,9 @@ import path from "path";
 
 // Load environment variables
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
-
+const NODE_ENV = process.env.NODE_ENV || "development";
 // Configuration
-const PYTHON_API_BASE_URL = process.env.PYTHON_API_URL || 'http://127.0.0.1:8080';
+const PYTHON_API_BASE_URL =  NODE_ENV === "production" ? process.env.PYTHON_API_URL : 'http://127.0.0.1:8080';
 const PYTHON_API_TIMEOUT = 60000; // 60 seconds
 
 

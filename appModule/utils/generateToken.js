@@ -17,9 +17,9 @@ export const generateTokens = async (accountId, email, req, res) => {
                 jti: crypto.randomUUID() // Unique token ID
             },process.env.ACCESS_TOKEN_SECRET,
          { 
-                expiresIn: process.env.ACCESS_TOKEN_EXPIRY || "30m", // Shorter expiry (30 mins)
-                audience: process.env.TOKEN_AUDIENCE || "",
-                issuer: process.env.TOKEN_ISSUER || "" 
+                expiresIn: process.env.ACCESS_TOKEN_EXPIRY || "60m", // Shorter expiry (30 mins)
+                audience: process.env.TOKEN_AUDIENCE || "oicemark-web-app.onrender.com",
+                issuer: process.env.TOKEN_ISSUER || "oicemark-web-app.onrender-auth"
             });
             // Generate refresh token with fingerprint to validate client
         const refreshToken = jwt.sign(
@@ -33,15 +33,15 @@ export const generateTokens = async (accountId, email, req, res) => {
             process.env.REFRESH_TOKEN_SECRET,
             { 
                 expiresIn: process.env.REFRESH_TOKEN_EXPIRY || "7d",
-                audience: process.env.TOKEN_AUDIENCE || "",
-                issuer: process.env.TOKEN_ISSUER || "" 
+                audience: process.env.TOKEN_AUDIENCE || "oicemark-web-app.onrender.com",
+                issuer: process.env.TOKEN_ISSUER || "oicemark-web-app.onrender-auth" 
             }
         );
         // Base cookie configuration
         const cookieConfig = {
             httpOnly: true,
             sameSite: process.env.COOKIE_SAME_SITE || "Lax",
-            // domain: process.env.COOKIE_DOMAIN || "",
+            domain: process.env.COOKIE_DOMAIN || "https://voicemark-web-app.onrender.com",
             secure: process.env.NODE_ENV === "production"
         };
 

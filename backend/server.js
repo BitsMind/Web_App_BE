@@ -24,9 +24,11 @@ app.set('trust proxy', 1);
 
 // Environment variables
 const PORT = process.env.PORT || 5002;
-const NODE_ENV = "development";
-const allowedOrigin = NODE_ENV === "development" ? "http://localhost:3000" : null
+const NODE_ENV = process.env.NODE_ENV || "development";
 
+const allowedOrigin = NODE_ENV === "development" ? "http://localhost:3000" : "https://voicemark-web-app.onrender.com"
+
+console.log(allowedOrigin)
 // Security middleware
 app.use(helmet()); // Helps secure Express apps with various HTTP headers (X-Content-Type-Options(MIME type sniffing), X-Frame-Options(clickjacking), Content-Security-Policy)
 app.use(mongoSanitize()); // Prevents MongoDB Operator Injection
