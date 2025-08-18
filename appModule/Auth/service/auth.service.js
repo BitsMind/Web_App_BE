@@ -25,7 +25,7 @@ const LOGIN_LOCKOUT_DURATION = 15 * 60; // 15 minutes in seconds
 const VERIFICATION_EMAIL_EXPIRY = 10 * 60 * 1000; // 10 minutes
 
 const SAMESITE = process.env.COOKIE_SAME_SITE || "Lax"; 
-const DOMAIN = process.env.COOKIE_DOMAIN || ".voicemark-web-app.onrender.com";
+const DOMAIN = process.env.COOKIE_DOMAIN || ".jennyfairy.store";
 const SECURE = process.env.NODE_ENV === "production";
 
 /**
