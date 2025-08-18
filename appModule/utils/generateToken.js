@@ -18,8 +18,8 @@ export const generateTokens = async (accountId, email, req, res) => {
             },process.env.ACCESS_TOKEN_SECRET,
          { 
                 expiresIn: process.env.ACCESS_TOKEN_EXPIRY || "60m", // Shorter expiry (30 mins)
-                audience: process.env.TOKEN_AUDIENCE || "oicemark-web-app.onrender.com",
-                issuer: process.env.TOKEN_ISSUER || "oicemark-web-app.onrender-auth"
+                audience: process.env.TOKEN_AUDIENCE || ".jennyfairy.store",
+                issuer: process.env.TOKEN_ISSUER || ".jennyfairy.store-auth" 
             });
             // Generate refresh token with fingerprint to validate client
         const refreshToken = jwt.sign(
@@ -33,15 +33,15 @@ export const generateTokens = async (accountId, email, req, res) => {
             process.env.REFRESH_TOKEN_SECRET,
             { 
                 expiresIn: process.env.REFRESH_TOKEN_EXPIRY || "7d",
-                audience: process.env.TOKEN_AUDIENCE || "oicemark-web-app.onrender.com",
-                issuer: process.env.TOKEN_ISSUER || "oicemark-web-app.onrender-auth" 
+                audience: process.env.TOKEN_AUDIENCE || ".jennyfairy.store",
+                issuer: process.env.TOKEN_ISSUER || ".jennyfairy.store-auth" 
             }
         );
         // Base cookie configuration
         const cookieConfig = {
             httpOnly: true,
             sameSite: process.env.COOKIE_SAME_SITE || "Lax",
-            domain: process.env.COOKIE_DOMAIN || "https://voicemark-web-app.onrender.com",
+            domain: process.env.COOKIE_DOMAIN || "https://jennyfairy.store",
             secure: process.env.NODE_ENV === "production"
         };
 
