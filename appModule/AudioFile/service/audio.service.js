@@ -14,7 +14,7 @@ dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 const NODE_ENV = process.env.NODE_ENV || "development";
 // Configuration
 const PYTHON_API_BASE_URL =  NODE_ENV === "production" ? process.env.PYTHON_API_URL : 'http://127.0.0.1:8080';
-const PYTHON_API_TIMEOUT = 60000; // 60 seconds
+const PYTHON_API_TIMEOUT = 120000; // 2 minutes
 
 
 const cloudinary = audioCloudinary();
