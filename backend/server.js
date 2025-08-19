@@ -32,6 +32,10 @@ const allowedOrigins = [
   "https://jennyfairy.store", // Always allow production domain
 ];
 
+const PYTHON_API_BASE_URL =  NODE_ENV === "production" ? process.env.PYTHON_API_URL : 'http://127.0.0.1:8080';
+
+console.log(PYTHON_API_BASE_URL)
+
 // Add development origins if in development
 if (NODE_ENV === "development") {
   allowedOrigins.push(
