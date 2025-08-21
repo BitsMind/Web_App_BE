@@ -196,6 +196,57 @@ export const getUserProfileService = async (userId) => {
             throw { status: 404, message: "User not found" };
         }
 
+        if (totalAudioFiles === 0) {
+            // Enhanced user stats with additional calculations
+            const userStats = {
+                // Basic info
+                name: user.name,
+                email: user.email,
+                avatar: user.avatar || null,
+                memberSince: user.createdAt,
+                
+                // Account info
+                isVerified: user.accountId?.isVerified || false,
+                userType: user.accountId?.userType || "USER",
+                lastLogin: user.accountId?.lastLogin || null,
+                
+                // File and storage stats
+                totalProcessedFiles: user.totalProcessedFiles || 0,
+                totalPaid: user.totalPaid || 0,
+                usedStorage: user.usedStorage || 0,
+                totalAudioFiles: totalAudioFiles,
+                totalDetectionCount: 0, // No files, so no detections
+                
+                // Storage formatting for better UX
+                usedStorageFormatted: formatBytes(user.usedStorage || 0),
+                
+                // Additional calculated stats
+                averageFileSize: 0,
+                averageFileSizeFormatted: "0 B"
+            };
+
+            return {
+                audioFiles: [],
+                totalAudioFiles: 0,
+                userStats: userStats
+            };
+        }
+
+        // Get all audio files for the user (no pagination) with proper populate
+        const audioFiles = await AudioFile.find({ uploadedBy: userId })
+            .sort({ createdAt: -1 })
+            .populate({
+                path: "watermarkedMessageId", // Changed from "watermarkedMessage" to match schema
+                select: "message detectionCount lastDetectedAt binaryId", // Include binaryId if using Option 1
+                model: "WatermarkedMessage"
+            })
+            .lean();
+
+        // Calculate total detection count across all files
+        const totalDetectionCount = audioFiles.reduce((total, file) => {
+            return total + (file?.watermarkedMessageId?.detectionCount || 0);
+        }, 0);
+
         // Enhanced user stats with additional calculations
         const userStats = {
             // Basic info
@@ -214,6 +265,7 @@ export const getUserProfileService = async (userId) => {
             totalPaid: user.totalPaid || 0,
             usedStorage: user.usedStorage || 0,
             totalAudioFiles: totalAudioFiles,
+            totalDetectionCount: totalDetectionCount, // New field for total detections
             
             // Storage formatting for better UX
             usedStorageFormatted: formatBytes(user.usedStorage || 0),
@@ -222,23 +274,6 @@ export const getUserProfileService = async (userId) => {
             averageFileSize: totalAudioFiles > 0 ? Math.round((user.usedStorage || 0) / totalAudioFiles) : 0,
             averageFileSizeFormatted: totalAudioFiles > 0 ? formatBytes(Math.round((user.usedStorage || 0) / totalAudioFiles)) : "0 B"
         };
-
-        if (totalAudioFiles === 0) {
-            return {
-                audioFiles: [],
-                totalAudioFiles: 0,
-                userStats: userStats
-            };
-        }
-
-        // Get all audio files for the user (no pagination)
-        const audioFiles = await AudioFile.find({ uploadedBy: userId })
-            .sort({ createdAt: -1 })
-            .populate({
-                path: "watermarkedMessage",
-                select: "message detectionCount lastDetectedAt"
-            })
-            .lean();
 
         // Enhanced audio file formatting with corrected field access
         const formattedAudioFiles = audioFiles.map((file) => ({
@@ -255,10 +290,11 @@ export const getUserProfileService = async (userId) => {
             // Watermark info - Fixed field access
             isWatermarked: file?.isWatermarked || false,
             
-            // Fixed: access the populated watermarkedMessage object
-            watermarkMessage: file?.watermarkedMessage?.message || file?.watermarkMessage || null,
-            watermarkDetectionCount: file?.watermarkedMessage?.detectionCount || file?.detectionAttempts || 0,
-            lastDetectedAt: file?.watermarkedMessage?.lastDetectedAt || file?.detectionTimestamp || null,
+            // Fixed: access the populated watermarkedMessageId object
+            watermarkMessage: file?.watermarkedMessageId?.message || file?.watermarkMessage || null,
+            watermarkBinaryId: file?.watermarkedMessageId?.binaryId || file?.watermarkMessage || null, // Binary ID if using Option 1
+            watermarkDetectionCount: file?.watermarkedMessageId?.detectionCount || 0,
+            lastDetectedAt: file?.watermarkedMessageId?.lastDetectedAt || file?.detectionTimestamp || null,
             
             // Detection info from schema
             watermarkDetected: file?.watermarkDetected,
@@ -300,6 +336,8 @@ export const getUserProfileService = async (userId) => {
             ),
             watermarkedFilesCount: formattedAudioFiles.filter(file => file.isWatermarked).length,
             detectedWatermarkCount: formattedAudioFiles.filter(file => file.watermarkDetected === true).length,
+            totalDetectionCount: totalDetectionCount, // Add total detection count to file stats too
+            averageDetectionsPerFile: totalAudioFiles > 0 ? (totalDetectionCount / totalAudioFiles).toFixed(2) : 0,
             processingStatusCounts: getProcessingStatusCounts(formattedAudioFiles),
             categoryCounts: formattedAudioFiles.reduce((counts, file) => {
                 const category = file.category || 'other';

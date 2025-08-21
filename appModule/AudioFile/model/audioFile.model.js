@@ -44,8 +44,8 @@ const audioFileSchema = new mongoose.Schema({
     type: String,
     default: null
   },
-  watermarkedMessage: {
-    type: mongoose.Schema.Types.ObjectId,
+  watermarkedMessageId: {
+    type: String,
     ref: "WatermarkedMessage",
     default: null
   },
