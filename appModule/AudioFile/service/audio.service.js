@@ -676,8 +676,6 @@ export const detectWatermarkService = async (audioFile, userId) => {
         console.error("❌ Failed to fetch WatermarkedMessage:", dbError.message);
       }
     }
-    console.log(watermarkObj)
-
     if (confidence && confidence < 0.5) {
       return {
         detected: false,
@@ -687,7 +685,7 @@ export const detectWatermarkService = async (audioFile, userId) => {
     }
     
     // Prepare response based on ownership
-    const responseData = {
+    let responseData = {
       detected: watermark_detected,
       confidence,
       audioUrl: uploadedAudioUrl,
@@ -697,28 +695,39 @@ export const detectWatermarkService = async (audioFile, userId) => {
     if (watermark_detected && watermarkObj) {
       if (isOwner) {
         // Owner gets full access to their watermarked message
-        responseData.message = {
-          content: watermarkObj.message,
-          createdAt: watermarkObj.createdAt,
-          detectionCount: (watermarkObj.detectionCount || 0) + 1
+        responseData = {
+          ...responseData,
+          message: {
+            content: watermarkObj.message,
+            createdAt: watermarkObj.createdAt,
+            detectionCount: (watermarkObj.detectionCount || 0) + 1
+          },
+          owner: ownerInfo
         };
-        responseData.owner = ownerInfo;
       } else {
         // Non-owner only gets owner information and detection count
-        responseData.message = {
-          content: "This audio file contains a watermark.",
-          detectionCount: (watermarkObj.detectionCount || 0) + 1
+        responseData = {
+          ...responseData,
+          message: {
+            content: "This audio file contains a watermark.",
+            detectionCount: (watermarkObj.detectionCount || 0) + 1
+          },
+          owner: ownerInfo,
+          note: `This watermarked audio belongs to ${ownerInfo.name}`
         };
-        responseData.owner = ownerInfo;
-        responseData.note = `This watermarked audio belongs to ${ownerInfo.name}`;
       }
     } else if (watermark_detected && decoded_message) {
       // Fallback if watermarkObj not found but watermark detected
-      responseData.message = decoded_message;
+      responseData = {
+        ...responseData,
+        message: decoded_message
+      };
     } else {
-      responseData.message = null;
+      responseData = {
+        ...responseData,
+        message: null
+      };
     }
-
     return responseData;
 
   } catch (error) {
@@ -749,7 +758,6 @@ export const detectWatermarkService = async (audioFile, userId) => {
     } else if (error.code === 'ETIMEDOUT') {
       throw { status: 408, message: "Detection request timed out" };
     }
-
     console.error("❌ Unhandled Error in detectWatermarkService:", error.message);
     throw error;
   }
