@@ -1,7 +1,7 @@
 import axios from "axios";
 import { audioCloudinary } from "../../../backend/lib/cloudinary/cloudinary.js";
 import User from "../../User/models/user.models.js";
-import { audioFileDTO, audioFileUserDTO, watermarkDetectionDTO } from "../dto/audio.dto.js";
+import { audioFileDTO, audioFileUserDTO } from "../dto/audio.dto.js";
 import AudioFile from "../model/audioFile.model.js";
 import WatermarkedMessage from "../../AudioFile/model/watermarkedMessage.model.js";
 import DownloadLog from "../model/DownloadLog.model.js";
@@ -249,6 +249,7 @@ export const createAudioFileService = async (newAudioFile, userId) => {
               // Same user's watermark - update audioFile and return
               audioFile.filePath = audioUrl;
               audioFile.watermarkMessage = decoded_message;
+              audioFile.watermarkedMessageId = decoded_message; // Store the binary ID directly
               audioFile.processingStatus = "completed";
               audioFile.isWatermarked = true;
               audioFile.confidence = confidence;
@@ -360,9 +361,21 @@ export const createAudioFileService = async (newAudioFile, userId) => {
         }
       );
 
+      // Create WatermarkedMessage with binary ID and the actual message content
+      const watermarkedMessage = await WatermarkedMessage.create({
+        _id: watermarkBinaryId,
+        audioFile: audioFile._id,
+        message: finalWatermarkMessage, // This contains the actual watermark content
+        createdBy: userId,
+        approved: true,
+        approvedAt: new Date(),
+        messageType: !watermarkMessage || watermarkMessage.trim() === '' ? 'owner_default' : 'user_provided' // Track the source
+      });
+
       // Update audioFile with watermarking data
       audioFile.filePath = watermarkedUrl;
       audioFile.watermarkMessage = watermarkBinaryId;
+      audioFile.watermarkedMessageId = watermarkBinaryId; // Store the binary ID directly
       audioFile.processingStatus = "completed";
       audioFile.isWatermarked = true;
       audioFile.detectedMessage = decoded_message;
@@ -383,7 +396,7 @@ export const createAudioFileService = async (newAudioFile, userId) => {
         audioFile.metadata = audioFile.metadata || {};
         audioFile.metadata.duration = audio_info.duration_seconds;
         audioFile.metadata.sampleRate = audio_info.processed_sample_rate;
-        audioFile.metadata.channels = audio_info.channels;
+        audioFile.metadata.channels = audio_info.channels; 
       }
 
       await audioFile.save();
@@ -394,23 +407,13 @@ export const createAudioFileService = async (newAudioFile, userId) => {
         { $inc: { usedStorage: fileSize } }
       );
 
-      // Create WatermarkedMessage with binary ID and the actual message content
-      await WatermarkedMessage.create({
-        _id: watermarkBinaryId,
-        audioFile: audioFile._id,
-        message: finalWatermarkMessage, // This contains the actual watermark content
-        createdBy: userId,
-        approved: true,
-        approvedAt: new Date(),
-        messageType: !watermarkMessage || watermarkMessage.trim() === '' ? 'owner_default' : 'user_provided' // Track the source
-      });
-
       console.log("✅ Audio file processing completed!");
       console.log(`📋 Watermark summary:
         - Binary ID: ${watermarkBinaryId}
         - Message: ${finalWatermarkMessage}
         - Type: ${!watermarkMessage || watermarkMessage.trim() === '' ? 'Owner Default' : 'User Provided'}
-        - Detected: ${decoded_message}`);
+        - Detected: ${decoded_message}
+        - Watermarked Message ID: ${watermarkedMessage._id}`);
 
     } catch (error) {
       console.error("❌ Error calling Python API:", error.response?.data || error.message);
