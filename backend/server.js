@@ -31,7 +31,7 @@ const allowedOrigins = [
   NODE_ENV === "development" ? "http://localhost:3000" : "https://www.markmyvoices.com/",
   "https://www.markmyvoices.com", // Always allow production domain
 ];
-
+ 
 const PYTHON_API_BASE_URL =  NODE_ENV === "production" ? process.env.PYTHON_API_URL : 'http://127.0.0.1:8080';
 
 console.log(PYTHON_API_BASE_URL)
