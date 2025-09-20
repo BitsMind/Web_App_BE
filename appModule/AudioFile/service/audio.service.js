@@ -8,7 +8,6 @@ import DownloadLog from "../model/DownloadLog.model.js";
 import dotenv from "dotenv";
 import path from "path";
 
-
 // Load environment variables
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 const NODE_ENV = process.env.NODE_ENV || "development";
@@ -439,113 +438,6 @@ export const createAudioFileService = async (newAudioFile, userId) => {
   }
 };
 
-
-// /**
-//  * 🆕 Generate comparison plot for existing audio files
-//  * @param {string} audioFileId - Audio file ID
-//  * @param {string} userId - User ID
-//  * @returns {Object} Updated audio file with comparison plot
-//  */
-// export const generateComparisonPlotService = async (audioFileId, userId) => {
-//   try {
-//     const audioFile = await AudioFile.findOne({ 
-//       _id: audioFileId,
-//       uploadedBy: userId,
-//       isActive: true 
-//     });
-
-//     if (!audioFile) {
-//       throw { status: 404, message: "Audio file not found" };
-//     }
-
-//     if (!audioFile.isWatermarked) {
-//       throw { status: 400, message: "Cannot generate comparison plot for non-watermarked audio" };
-//     }
-
-//     // Check if plot already exists and is recent (less than 1 hour old)
-//     if (audioFile.comparisonPlot && audioFile.plotGeneratedAt) {
-//       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-//       if (audioFile.plotGeneratedAt > oneHourAgo) {
-//         console.log("✅ Recent comparison plot already exists, returning existing plot");
-//         return audioFileDTO(audioFile);
-//       }
-//     }
-
-//     console.log(`🔄 Generating comparison plot for audio file: ${audioFileId}`);
-
-//     // We need the original audio URL for comparison - this would need to be stored
-//     // For now, we'll use a different approach or require original URL to be provided
-//     throw { status: 501, message: "Comparison plot generation for existing files not yet implemented - requires original audio URL" };
-    
-//   } catch (error) {
-//     console.error("Error in generateComparisonPlotService:", error.message);
-//     throw error;
-//   }
-// };
-
-// /**
-//  * 🆕 Get comparison plot for an audio file
-//  * @param {string} audioFileId - Audio file ID
-//  * @param {string} userId - User ID
-//  * @returns {Object} Comparison plot data
-//  */
-// export const getComparisonPlotService = async (audioFileId, userId) => {
-//   try {
-//     const audioFile = await AudioFile.findOne({ 
-//       _id: audioFileId,
-//       uploadedBy: userId,
-//       isActive: true 
-//     }).select('comparisonPlot comparisonPlotUrl plotGeneratedAt plotGenerationError fileName isWatermarked');
-
-//     if (!audioFile) {
-//       throw { status: 404, message: "Audio file not found" };
-//     }
-
-//     if (!audioFile.isWatermarked) {
-//       throw { status: 400, message: "No comparison plot available for non-watermarked audio" };
-//     }
-
-//     if (!audioFile.comparisonPlot && !audioFile.comparisonPlotUrl) {
-//       throw { status: 404, message: "No comparison plot found for this audio file" };
-//     }
-
-//     return {
-//       fileName: audioFile.fileName,
-//       comparisonPlot: audioFile.comparisonPlot,
-//       comparisonPlotUrl: audioFile.comparisonPlotUrl,
-//       plotGeneratedAt: audioFile.plotGeneratedAt,
-//       hasPlot: !!(audioFile.comparisonPlot || audioFile.comparisonPlotUrl)
-//     };
-    
-//   } catch (error) {
-//     console.error("Error in getComparisonPlotService:", error.message);
-//     throw error;
-//   }
-// };
-
-// // 🆕 Helper function to upload images to Cloudinary (you'll need to implement this)
-// async function uploadImageToCloudinary(imageData, options = {}) {
-//   // Implementation depends on your Cloudinary setup
-//   // This is a placeholder - replace with your actual Cloudinary image upload logic
-//   try {
-//     const cloudinary = require('cloudinary').v2;
-    
-//     const result = await cloudinary.uploader.upload(imageData, {
-//       resource_type: 'image',
-//       folder: options.folder || 'comparison_plots',
-//       format: options.format || 'png',
-//       public_id: options.public_id,
-//       overwrite: true,
-//       ...options
-//     });
-    
-//     return result.secure_url;
-//   } catch (error) {
-//     console.error('Cloudinary image upload failed:', error);
-//     throw error;
-//   }
-// }
-
 /**
  * Detect an audio file
  * @param {string} audioFile - Audio file data
@@ -762,7 +654,6 @@ export const detectWatermarkService = async (audioFile, userId) => {
     throw error;
   }
 };
-
 
 /**
  * Edit an existing audio file
@@ -1007,7 +898,7 @@ export const generateDownloadUrlService = async (audioFileId, userId) => {
         throw error;
     }
 };
-// Helper Functions
+
 
 /**
  * Generate signed URL for secure download

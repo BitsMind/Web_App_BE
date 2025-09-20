@@ -2,7 +2,6 @@ import { v2 as cloudinary } from "cloudinary";
 import dotenv from "dotenv";
 import path from "path";
 
-
 // Load environment variables
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
@@ -45,7 +44,6 @@ export const avatarCloudinary = () => {
   return cloudinary;
   
 }
-
 
 // Test connection for Audio Cloudinary
 export const testAudioConnection = async () => {
@@ -91,9 +89,5 @@ export const testAvatarConnection = async () => {
     };
   }
 }
-
-
-
-
 
 export default {testAudioConnection, testAvatarConnection};
