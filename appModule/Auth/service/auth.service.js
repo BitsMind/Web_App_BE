@@ -639,7 +639,7 @@ const clearAuthCookies = (res) => {
     const cookieConfig = {
         httpOnly: true,
         sameSite: SAMESITE,
-        domain: DOMAIN,
+        // domain: DOMAIN, // uncomment when in production
         secure: SECURE
     };
     // Clear accessToken cookie

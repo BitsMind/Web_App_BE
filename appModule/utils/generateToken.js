@@ -22,8 +22,8 @@ export const generateTokens = async (accountId, email, req, res) => {
             process.env.ACCESS_TOKEN_SECRET,
             { 
                 expiresIn: process.env.ACCESS_TOKEN_EXPIRY || "30m", // Match your env config
-                audience: process.env.TOKEN_AUDIENCE || "jennyfairy.store",
-                issuer: process.env.TOKEN_ISSUER || "jennyfairy.store-auth" 
+                audience: process.env.TOKEN_AUDIENCE || "markmyvoices.com",
+                issuer: process.env.TOKEN_ISSUER || "markmyvoices.com-auth" 
             }
         );
 
@@ -39,8 +39,8 @@ export const generateTokens = async (accountId, email, req, res) => {
             process.env.REFRESH_TOKEN_SECRET,
             { 
                 expiresIn: process.env.REFRESH_TOKEN_EXPIRY || "7d",
-                audience: process.env.TOKEN_AUDIENCE || "jennyfairy.store",
-                issuer: process.env.TOKEN_ISSUER || "jennyfairy.store-auth" 
+                audience: process.env.TOKEN_AUDIENCE || "markmyvoices.com",
+                issuer: process.env.TOKEN_ISSUER || "markmyvoices.com-auth" 
             }
         );
 
@@ -51,7 +51,7 @@ export const generateTokens = async (accountId, email, req, res) => {
             secure: process.env.NODE_ENV === "production", // Only secure in production
             // Remove domain in development, use it only in production
             ...(process.env.NODE_ENV === "production" && { 
-                domain: process.env.COOKIE_DOMAIN || ".jennyfairy.store" 
+                domain: process.env.COOKIE_DOMAIN || ".markmyvoices.com" 
             })
         };
 

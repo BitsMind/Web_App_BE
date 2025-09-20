@@ -436,7 +436,7 @@ audioFileSchema.methods.markAsProcessed = function() {
   return this.save();
 };
 
-// 🆕 Method to save comparison plot
+// Method to save comparison plot
 audioFileSchema.methods.saveComparisonPlot = function(plotBase64, plotUrl = null) {
   this.comparisonPlot = plotBase64;
   if (plotUrl) {
@@ -447,7 +447,7 @@ audioFileSchema.methods.saveComparisonPlot = function(plotBase64, plotUrl = null
   return this.save();
 };
 
-// 🆕 Method to save audio info
+// Method to save audio info
 audioFileSchema.methods.saveAudioInfo = function(audioInfo) {
   this.audioInfo = {
     originalSampleRate: audioInfo.original_sample_rate,
