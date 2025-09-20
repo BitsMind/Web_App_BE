@@ -932,9 +932,9 @@ const uploadAudioToCloudinary = async (audioData, format, options = {}) => {
     }
 
     const defaultOptions = {
-        resource_type: "video",
+        resource_type: "raw",
         folder: "audio_files",
-        quality: "100",
+
     };
 
     const uploadOptions = { ...defaultOptions, ...options };
